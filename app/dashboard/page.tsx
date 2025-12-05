@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase"; 
 import { ref, onValue, remove, push, update, get, runTransaction, set } from "firebase/database";
+// Storage関連のインポートを削除
 import { useAuth } from "@/context/AuthContext"; 
 import { useRouter } from "next/navigation";
 import { 
@@ -11,7 +12,8 @@ import {
   Heart, Mic2, CheckCircle2, Loader2, Twitter, Save,
   FileText, Music2, Type, FileUp, QrCode, Link as LinkIcon,
   ToggleLeft, ToggleRight, ListChecks, Copy, Search, History,
-  Eraser, Youtube, Twitch, CalendarDays, ImageIcon
+  Eraser, Youtube, Twitch, CalendarDays, ImageIcon, ArrowUp,
+  Clock, Image as ImageIconLucide
 } from 'lucide-react';
 
 /* --- Types (省略なし) --- */
@@ -44,10 +46,16 @@ type RequestData = {
   completedAt?: number;
 };
 
+type SetlistLog = {
+  id: string;
+  date: number;
+  songs: { title: string; artist: string; id: string }[];
+};
+
 type UserProfile = {
   displayName: string;
   bio: string;
-  avatarUrl?: string; // ★追加: アイコン画像
+  avatarUrl?: string;
   twitter: string;
   youtube?: string;
   twitch?: string;
@@ -249,172 +257,112 @@ const SongManager = ({ userId, songs, onEdit }: { userId: string, songs: SongDat
   );
 };
 
-// --- 2. Request Manager ---
-const RequestManager = ({ userId }: { userId: string }) => {
-  const [requests, setRequests] = useState<RequestData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const reqRef = ref(db, `users/${userId}/requests`);
-    return onValue(reqRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setRequests(Object.entries(data).map(([k, v]: [string, any]) => ({ id: k, ...v })));
-      } else {
-        setRequests([]);
-      }
-      setLoading(false);
-    });
-  }, [userId]);
-
-  const updateStatus = async (req: RequestData, newStatus: RequestData['status']) => {
-    try {
-      const updates: any = { status: newStatus };
-      if (newStatus === 'completed') updates.completedAt = Date.now();
-      
-      await update(ref(db, `users/${userId}/requests/${req.id}`), updates);
-      
-      const songRef = ref(db, `users/${userId}/songs/${req.songId}`);
-      const TARGET_TAG = "リクエスト";
-
-      await runTransaction(songRef, (song) => {
-        if (song) {
-          const tags = song.tags || [];
-          if (newStatus === 'accepted') {
-            if (!tags.includes(TARGET_TAG)) song.tags = [...tags, TARGET_TAG];
-          } else if (newStatus === 'completed' || newStatus === 'rejected') {
-            song.tags = tags.filter((t: string) => t !== TARGET_TAG);
-            if (newStatus === 'completed') {
-              song.lastSungAt = Date.now();
-              song.sungCount = (song.sungCount || 0) + 1;
-            }
-          }
-        }
-        return song;
-      });
-
-      if (newStatus === 'accepted') alert("承認しました！");
-      if (newStatus === 'completed') alert("完了！歌った回数と日付を更新しました。");
-    } catch (e) {
-      console.error(e);
-      alert("更新に失敗しました。");
-    }
-  };
-
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-slate-300" /></div>;
-
-  const activeRequests = requests.filter(r => r.status !== 'completed' && r.status !== 'rejected');
-
-  return (
-    <div className="bg-white rounded-b-2xl rounded-tr-2xl shadow-sm border border-slate-200 p-4 md:p-6">
-      <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-        <MessageSquare className="w-5 h-5 text-green-500" />
-        届いたリクエスト ({activeRequests.length})
-      </h3>
-      
-      <div className="space-y-4">
-        {activeRequests.length === 0 ? (
-          <p className="text-slate-400 text-center py-8">現在進行中のリクエストはありません</p>
-        ) : (
-          activeRequests.sort((a,b) => b.createdAt - a.createdAt).map(req => (
-            <div key={req.id} className={`p-4 rounded-xl border ${req.status === 'accepted' ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-100' : 'bg-white border-slate-200'}`}>
-              <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-                <div className="w-full">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {req.status}
-                    </span>
-                    <span className="text-xs text-slate-400">{new Date(req.createdAt).toLocaleDateString()}</span>
-                  </div>
-                  <h4 className="font-bold text-slate-800 text-lg">
-                    {req.songTitle}
-                    <span className="text-sm font-normal text-slate-500 ml-2">by {req.requesterName}</span>
-                  </h4>
-                  {req.comment && (
-                    <div className="mt-2 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 italic border border-slate-100">
-                      "{req.comment}"
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex flex-row md:flex-col gap-2 w-full md:w-auto mt-2 md:mt-0">
-                  {req.status === 'pending' && (
-                    <button onClick={() => updateStatus(req, 'accepted')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 whitespace-nowrap">
-                      <CheckCircle2 className="w-3 h-3" /> 承認
-                    </button>
-                  )}
-                  {req.status === 'accepted' && (
-                    <button onClick={() => updateStatus(req, 'completed')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 whitespace-nowrap">
-                      <Mic2 className="w-3 h-3" /> 完了
-                    </button>
-                  )}
-                  <button onClick={() => updateStatus(req, 'rejected')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-200 whitespace-nowrap">
-                    <X className="w-3 h-3" /> 却下
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
-
-// --- History Manager ---
+// --- 2. Request & History Manager ---
 const HistoryManager = ({ userId }: { userId: string }) => {
-  const [history, setHistory] = useState<RequestData[]>([]);
+  const [activeTab, setActiveTab] = useState<'requests' | 'setlists'>('requests');
+  const [requests, setRequests] = useState<RequestData[]>([]);
+  const [setlists, setSetlists] = useState<SetlistLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // リクエスト履歴
     const reqRef = ref(db, `users/${userId}/requests`);
-    return onValue(reqRef, (snapshot) => {
+    const unsubReq = onValue(reqRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const list = Object.entries(data)
           .map(([k, v]: [string, any]) => ({ id: k, ...v }))
           .filter((r: RequestData) => r.status === 'completed');
-        setHistory(list);
+        setRequests(list);
+      } else {
+        setRequests([]);
+      }
+    });
+
+    // セトリ履歴
+    const setlistRef = ref(db, `users/${userId}/setlist_history`);
+    const unsubSetlist = onValue(setlistRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const list = Object.entries(data)
+          .map(([k, v]: [string, any]) => ({ id: k, ...v }));
+        setSetlists(list);
+      } else {
+        setSetlists([]);
       }
       setLoading(false);
     });
+
+    return () => { unsubReq(); unsubSetlist(); };
   }, [userId]);
 
   if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-slate-300" /></div>;
 
   return (
     <div className="bg-white rounded-b-2xl rounded-tr-2xl shadow-sm border border-slate-200 p-4 md:p-6">
-      <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-        <History className="w-5 h-5 text-slate-500" />
-        リクエスト履歴 ({history.length})
-      </h3>
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full text-left text-sm min-w-[500px]">
-          <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold whitespace-nowrap">
-            <tr>
-              <th className="p-3">完了日</th>
-              <th className="p-3">曲名</th>
-              <th className="p-3">リクエスト者</th>
-              <th className="p-3">コメント</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {history.sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0)).map(req => (
-              <tr key={req.id} className="hover:bg-slate-50">
-                <td className="p-3 text-slate-500 whitespace-nowrap">{req.completedAt ? new Date(req.completedAt).toLocaleDateString() : "-"}</td>
-                <td className="p-3 font-bold text-slate-700">{req.songTitle}</td>
-                <td className="p-3 text-slate-600">{req.requesterName}</td>
-                <td className="p-3 text-slate-400 text-xs italic truncate max-w-[200px]">{req.comment}</td>
-              </tr>
-            ))}
-            {history.length === 0 && (
-              <tr><td colSpan={4} className="p-8 text-center text-slate-400">履歴はありません</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className="flex items-center gap-4 mb-6 border-b border-slate-100 pb-4">
+        <button onClick={() => setActiveTab('requests')} className={`text-sm font-bold flex items-center gap-2 px-3 py-2 rounded-lg transition ${activeTab === 'requests' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+          <History className="w-4 h-4" /> リクエスト履歴 ({requests.length})
+        </button>
+        <button onClick={() => setActiveTab('setlists')} className={`text-sm font-bold flex items-center gap-2 px-3 py-2 rounded-lg transition ${activeTab === 'setlists' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+          <ListChecks className="w-4 h-4" /> セトリログ ({setlists.length})
+        </button>
       </div>
+
+      {activeTab === 'requests' ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-sm min-w-[500px]">
+            <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold whitespace-nowrap">
+              <tr>
+                <th className="p-3">完了日</th>
+                <th className="p-3">曲名</th>
+                <th className="p-3">リクエスト者</th>
+                <th className="p-3">コメント</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {requests.sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0)).map(req => (
+                <tr key={req.id} className="hover:bg-slate-50">
+                  <td className="p-3 text-slate-500 whitespace-nowrap">{req.completedAt ? new Date(req.completedAt).toLocaleDateString() : "-"}</td>
+                  <td className="p-3 font-bold text-slate-700">{req.songTitle}</td>
+                  <td className="p-3 text-slate-600">{req.requesterName}</td>
+                  <td className="p-3 text-slate-400 text-xs italic truncate max-w-[200px]">{req.comment}</td>
+                </tr>
+              ))}
+              {requests.length === 0 && (
+                <tr><td colSpan={4} className="p-8 text-center text-slate-400">履歴はありません</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {setlists.length === 0 ? (
+            <p className="text-center text-slate-400 py-8">保存されたセトリはありません</p>
+          ) : (
+            setlists.sort((a,b) => b.date - a.date).map(log => (
+              <div key={log.id} className="border border-slate-200 rounded-xl p-4 hover:bg-slate-50 transition">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-slate-400" />
+                    {new Date(log.date).toLocaleDateString()} のセトリ
+                  </h4>
+                  <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">{log.songs?.length || 0}曲</span>
+                </div>
+                <div className="space-y-1">
+                  {log.songs?.map((s, i) => (
+                    <div key={i} className="text-sm text-slate-600 flex gap-2">
+                      <span className="text-slate-300 w-4 text-right">{i+1}.</span>
+                      <span className="font-bold">{s.title}</span>
+                      <span className="text-slate-400">- {s.artist}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -586,17 +534,17 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
               <input type="text" value={profile.displayName} onChange={e => setProfile({...profile, displayName: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200 outline-none text-slate-900 bg-white" />
             </div>
             
-            {/* ★追加: アイコン設定 */}
+            {/* ★修正: ファイル選択を削除し、URL入力のみにする */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">アイコン画像URL</label>
+              <label className="block text-sm font-bold text-slate-700 mb-2">アイコン画像 (URL)</label>
               <div className="flex gap-4 items-center">
                 <div className="relative flex-1">
-                  <ImageIcon className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <ImageIconLucide className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                   <input type="text" placeholder="https://..." value={profile.avatarUrl || ""} onChange={e => setProfile({...profile, avatarUrl: e.target.value})} className="w-full pl-9 p-3 rounded-xl border border-slate-200 outline-none text-sm text-slate-900 bg-white" />
                 </div>
                 {profile.avatarUrl && <img src={profile.avatarUrl} className="w-10 h-10 rounded-full border border-slate-200 object-cover" />}
               </div>
-              <p className="text-xs text-slate-400 mt-1">※立ち絵などの画像URLを入力してください</p>
+              <p className="text-xs text-slate-400 mt-1">※立ち絵などの画像URLを直接入力してください</p>
             </div>
 
             <div>
@@ -684,8 +632,8 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
 
 /* --- Dashboard Main --- */
 export default function Dashboard() {
-  const { user, loading, loginWithGoogle, loginWithTwitter } = useAuth();
-  const router = useRouter(); // ★リダイレクト用
+  const { user, loading } = useAuth();
+  const router = useRouter(); 
   
   const [activeTab, setActiveTab] = useState<'songs' | 'requests' | 'history' | 'settings'>('songs');
   const [songs, setSongs] = useState<SongData[]>([]);
@@ -693,11 +641,11 @@ export default function Dashboard() {
   const [editingSong, setEditingSong] = useState<SongData | undefined>(undefined);
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [requests, setRequests] = useState<RequestData[]>([]);
   
   const [stats, setStats] = useState({ totalSongs: 0, totalLikes: 0, pendingRequests: 0 });
 
   useEffect(() => {
-    // ログインしていない場合はトップページへ戻す
     if (!loading && !user) {
       router.push("/");
     }
@@ -718,8 +666,12 @@ export default function Dashboard() {
     const reqRef = ref(db, `users/${user.uid}/requests`);
     const unsubReq = onValue(reqRef, (snapshot) => {
       const data = snapshot.val();
-      const pending = data ? Object.values(data).filter((r: any) => r.status === 'pending').length : 0;
-      setStats(prev => ({ ...prev, pendingRequests: pending }));
+      if (data) {
+        const reqList = Object.entries(data).map(([k, v]: [string, any]) => ({ id: k, ...v }));
+        setRequests(reqList);
+        const pending = reqList.filter((r) => r.status === 'pending').length;
+        setStats(prev => ({ ...prev, pendingRequests: pending }));
+      }
     });
 
     const catRef = ref(db, `users/${user.uid}/settings/categories`);
@@ -736,13 +688,102 @@ export default function Dashboard() {
     setIsModalOpen(true);
   };
 
+  const RequestManager = ({ userId }: { userId: string }) => {
+    const activeRequests = requests.filter(r => r.status !== 'completed' && r.status !== 'rejected');
+    
+    const updateStatus = async (req: RequestData, newStatus: RequestData['status']) => {
+      try {
+        const updates: any = { status: newStatus };
+        if (newStatus === 'completed') updates.completedAt = Date.now();
+        await update(ref(db, `users/${userId}/requests/${req.id}`), updates);
+        const songRef = ref(db, `users/${userId}/songs/${req.songId}`);
+        const TARGET_TAG = "リクエスト";
+        await runTransaction(songRef, (song) => {
+          if (song) {
+            const tags = song.tags || [];
+            if (newStatus === 'accepted') {
+              if (!tags.includes(TARGET_TAG)) song.tags = [...tags, TARGET_TAG];
+            } else if (newStatus === 'completed' || newStatus === 'rejected') {
+              song.tags = tags.filter((t: string) => t !== TARGET_TAG);
+              if (newStatus === 'completed') {
+                song.lastSungAt = Date.now();
+                song.sungCount = (song.sungCount || 0) + 1;
+              }
+            }
+          }
+          return song;
+        });
+        if (newStatus === 'accepted') alert("承認しました！");
+        if (newStatus === 'completed') alert("完了！歌った回数と日付を更新しました。");
+      } catch (e) {
+        console.error(e);
+        alert("更新に失敗しました。");
+      }
+    };
+
+    return (
+      <div className="bg-white rounded-b-2xl rounded-tr-2xl shadow-sm border border-slate-200 p-4 md:p-6">
+        <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-green-500" />
+          届いたリクエスト ({activeRequests.length})
+        </h3>
+        <div className="space-y-4">
+          {activeRequests.length === 0 ? (
+            <p className="text-slate-400 text-center py-8">現在進行中のリクエストはありません</p>
+          ) : (
+            activeRequests.sort((a,b) => b.createdAt - a.createdAt).map(req => (
+              <div key={req.id} className={`p-4 rounded-xl border ${req.status === 'accepted' ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-100' : 'bg-white border-slate-200'}`}>
+                <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                  <div className="w-full">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {req.status}
+                      </span>
+                      <span className="text-xs text-slate-400">{new Date(req.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <h4 className="font-bold text-slate-800 text-lg">
+                      {req.songTitle}
+                      <span className="text-sm font-normal text-slate-500 ml-2">by {req.requesterName}</span>
+                    </h4>
+                    {req.comment && (
+                      <div className="mt-2 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 italic border border-slate-100">
+                        "{req.comment}"
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-row md:flex-col gap-2 w-full md:w-auto mt-2 md:mt-0">
+                    {req.status === 'pending' && (
+                      <button onClick={() => updateStatus(req, 'accepted')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 whitespace-nowrap">
+                        <CheckCircle2 className="w-3 h-3" /> 承認
+                      </button>
+                    )}
+                    {req.status === 'accepted' && (
+                      <button onClick={() => updateStatus(req, 'completed')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 whitespace-nowrap">
+                        <Mic2 className="w-3 h-3" /> 完了
+                      </button>
+                    )}
+                    <button onClick={() => updateStatus(req, 'rejected')} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-200 whitespace-nowrap">
+                      <X className="w-3 h-3" /> 却下
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-blue-500" /></div>;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm" id="top">
         <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2 hover:opacity-70 transition">
@@ -787,6 +828,9 @@ export default function Dashboard() {
       {activeTab === 'songs' && (
         <button onClick={() => openModal()} className="fixed bottom-6 right-6 bg-slate-900 text-white p-4 rounded-full shadow-xl hover:bg-slate-800 transition hover:scale-110 z-50 flex items-center gap-2 font-bold ring-4 ring-white"><Plus className="w-6 h-6" /><span className="hidden md:inline pr-2">曲を追加</span></button>
       )}
+
+      {/* ★トップへ戻るボタン */}
+      <a href="#top" className="fixed bottom-24 right-6 bg-white text-slate-500 p-3 rounded-full shadow-lg hover:bg-slate-100 transition z-40 border border-slate-200"><ArrowUp className="w-5 h-5" /></a>
 
       {isModalOpen && <SongModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} initialData={editingSong} userId={user.uid} customTags={customTags} categories={categories} />}
     </div>

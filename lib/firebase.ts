@@ -1,24 +1,25 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, TwitterAuthProvider } from "firebase/auth";
 import { getDatabase } from "firebase/database";
+// Storage関連のインポートを削除しました
 
-// ★ここを書き換えました：環境変数を使わず、直接キーを書き込んでいます
 const firebaseConfig = {
-  apiKey: "AIzaSyD8ZxrKXhL3hXMx6yXiFEAd91kzB5YX_lw",
+  apiKey: "AIzaSyD8ZxrKXhL3hXMx6yXiFEAd91kzB5YX_lw", 
   authDomain: "raimu-song-list-79b52.firebaseapp.com",
   databaseURL: "https://raimu-song-list-79b52-default-rtdb.firebaseio.com",
   projectId: "raimu-song-list-79b52",
-  storageBucket: "raimu-song-list-79b52.firebasestorage.app",
+  storageBucket: "raimu-song-list-79b52.firebasestorage.app", 
   messagingSenderId: "242038202194",
   appId: "1:242038202194:web:81cd18eb19e8c91084648b"
 };
 
-// アプリの初期化（二重初期化を防ぐ）
+// アプリの初期化
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // 各機能の初期化
 const auth = getAuth(app);
 const db = getDatabase(app);
+// const storage = getStorage(app); // ★削除: Storageは使いません
 const googleProvider = new GoogleAuthProvider();
 const twitterProvider = new TwitterAuthProvider();
 

@@ -13,7 +13,7 @@ import {
 import { 
   Music, Heart, User as UserIcon, Share2, Twitter, Filter, Loader2, Mic2, 
   X, Send, LogIn, LogOut, Music2, FileText, Dice5, Trophy, AlertTriangle, Sun, Moon,
-  Youtube, Twitch, Clock, CalendarDays, RefreshCw, ChevronDown
+  Youtube, Twitch, Clock, CalendarDays, RefreshCw, ChevronDown, MessageSquare
 } from 'lucide-react';
 
 /* --- 型定義 --- */
@@ -35,7 +35,7 @@ type Song = {
 type Profile = {
   displayName?: string;
   bio?: string;
-  avatarUrl?: string; // ★追加: アイコン画像のURL
+  avatarUrl?: string;
   twitter?: string;
   youtube?: string;
   twitch?: string;
@@ -47,11 +47,15 @@ type Profile = {
 };
 
 type RequestData = {
+  id?: string;
+  requesterName: string;
   requesterUid: string;
+  songTitle: string;
+  comment: string;
   status: string;
+  createdAt: number;
 };
 
-/* --- あいまい検索正規化 --- */
 const normalizeText = (text: string) => {
   if (!text) return "";
   return text
@@ -99,22 +103,11 @@ const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, o
   const [animating, setAnimating] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("ALL");
 
-  // ガチャを引くロジック
   const drawGacha = () => {
-    // 1. カテゴリで絞り込み
-    const targets = selectedCategory === "ALL" 
-      ? songs 
-      : songs.filter(s => s.category === selectedCategory);
-
-    if (targets.length === 0) {
-      alert("このカテゴリには曲がありません！");
-      return;
-    }
-
-    // 2. アニメーション開始
+    const targets = selectedCategory === "ALL" ? songs : songs.filter(s => s.category === selectedCategory);
+    if (targets.length === 0) return alert("このカテゴリには曲がありません！");
     setResult(null);
     setAnimating(true);
-
     setTimeout(() => {
       const random = targets[Math.floor(Math.random() * targets.length)];
       setResult(random);
@@ -122,14 +115,8 @@ const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, o
     }, 1500);
   };
 
-  // モーダルが開いた瞬間は自動では引かない（選ばせるため）
-  // 閉じたときにリセット
   useEffect(() => {
-    if (!isOpen) {
-      setResult(null);
-      setAnimating(false);
-      setSelectedCategory("ALL");
-    }
+    if (!isOpen) { setResult(null); setAnimating(false); setSelectedCategory("ALL"); }
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -138,17 +125,10 @@ const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, o
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-8 text-center relative">
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
-        <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-center gap-2">
-          <Dice5 className="w-6 h-6 text-yellow-400" /> 今日のラッキー曲
-        </h2>
-        
-        {/* 結果表示エリア */}
+        <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-center gap-2"><Dice5 className="w-6 h-6 text-yellow-400" /> 今日のラッキー曲</h2>
         <div className="min-h-[200px] flex items-center justify-center">
           {animating ? (
-            <div className="py-10">
-              <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
-              <p className="mt-4 text-slate-300 font-bold animate-pulse">選曲中...</p>
-            </div>
+            <div className="py-10"><Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" /><p className="mt-4 text-slate-300 font-bold animate-pulse">選曲中...</p></div>
           ) : result ? (
             <div className="animate-in zoom-in duration-300 w-full">
               <p className="text-sm text-slate-400 mb-2">{result.artist}</p>
@@ -156,32 +136,15 @@ const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, o
               <div className="bg-slate-800 rounded-lg p-3 text-xs text-slate-400 mb-6">この曲をリクエストしてみる？</div>
             </div>
           ) : (
-            <div className="text-slate-400 text-sm">
-              <p className="mb-4">カテゴリーを選んでガチャを回そう！</p>
-              <Music className="w-12 h-12 mx-auto opacity-20" />
-            </div>
+            <div className="text-slate-400 text-sm"><p className="mb-4">カテゴリーを選んでガチャを回そう！</p><Music className="w-12 h-12 mx-auto opacity-20" /></div>
           )}
         </div>
-
-        {/* コントロールエリア */}
         <div className="space-y-3 mt-4">
-          <select 
-            value={selectedCategory} 
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            disabled={animating}
-            className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none"
-          >
+          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} disabled={animating} className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none">
             <option value="ALL">すべてのカテゴリー</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-
-          <button 
-            onClick={drawGacha} 
-            disabled={animating}
-            className={`w-full font-bold py-3 px-6 rounded-full transition flex items-center justify-center gap-2 ${
-              result ? "bg-white text-slate-900 hover:bg-slate-100" : "bg-yellow-500 text-white hover:bg-yellow-400"
-            }`}
-          >
+          <button onClick={drawGacha} disabled={animating} className={`w-full font-bold py-3 px-6 rounded-full transition flex items-center justify-center gap-2 ${result ? "bg-white text-slate-900 hover:bg-slate-100" : "bg-yellow-500 text-white hover:bg-yellow-400"}`}>
             {result ? <><RefreshCw className="w-4 h-4" /> もう一回引く</> : "ガチャを回す！"}
           </button>
         </div>
@@ -190,65 +153,38 @@ const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, o
   );
 };
 
-/* --- リクエストモーダル (省略なし) --- */
-const RequestModal = ({ 
-  isOpen, onClose, song, pageOwnerId, viewer, userRequests
-}: { 
-  isOpen: boolean; onClose: () => void; song: Song | null; pageOwnerId: string; viewer: User; userRequests: RequestData[];
-}) => {
+const RequestModal = ({ isOpen, onClose, song, pageOwnerId, viewer, userRequests }: any) => {
   const [name, setName] = useState(viewer.displayName || "");
   const [comment, setComment] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSending, setIsSending] = useState(false);
-
-  const pendingCount = userRequests.filter(r => r.requesterUid === viewer.uid && r.status === 'pending').length;
+  const pendingCount = userRequests.filter((r:any) => r.requesterUid === viewer.uid && r.status === 'pending').length;
   const isLimitReached = pendingCount >= 3;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!song) return;
-    
-    const currentPending = userRequests.filter(r => r.requesterUid === viewer.uid && r.status === 'pending').length;
-    if (currentPending >= 3) {
-      alert("リクエスト上限(3曲)に達しています。消化されるのをお待ちください。");
-      return;
-    }
-    
+    const currentPending = userRequests.filter((r:any) => r.requesterUid === viewer.uid && r.status === 'pending').length;
+    if (currentPending >= 3) return alert("リクエスト上限(3曲)に達しています。消化されるのをお待ちください。");
     setIsSending(true);
     try {
-      const requestsRef = ref(db, `users/${pageOwnerId}/requests`);
-      await push(requestsRef, {
-        songId: song.id,
-        songTitle: song.title,
-        requesterName: isAnonymous ? "匿名希望" : (name || "匿名"),
-        requesterUid: viewer.uid,
-        comment: comment,
-        status: 'pending',
-        createdAt: Date.now()
+      await push(ref(db, `users/${pageOwnerId}/requests`), {
+        songId: song.id, songTitle: song.title, requesterName: isAnonymous ? "匿名希望" : (name || "匿名"), requesterUid: viewer.uid, comment: comment, status: 'pending', createdAt: Date.now()
       });
-      alert(`「${song.title}」をリクエストしました！`);
-      onClose();
-    } catch (error) {
-      console.error(error);
-      alert("送信に失敗しました");
-    } finally {
-      setIsSending(false);
-    }
+      alert(`「${song.title}」をリクエストしました！`); onClose();
+    } catch (error) { console.error(error); alert("送信に失敗しました"); } finally { setIsSending(false); }
   };
 
   if (!isOpen || !song) return null;
-
   return (
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200">
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
         <h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2"><Mic2 className="w-5 h-5 text-green-500" /> リクエスト</h2>
         <p className="text-slate-400 text-sm mb-6"><span className="font-bold text-green-400">{song.title}</span></p>
-        
         {isLimitReached ? (
           <div className="bg-red-900/20 border border-red-900/50 p-4 rounded-xl text-red-200 text-sm mb-4 flex gap-2">
-            <AlertTriangle className="w-5 h-5 shrink-0" />
-            <div><p className="font-bold">リクエスト上限に達しています</p><p className="text-xs opacity-70 mt-1">一度にリクエストできるのは3曲までです。</p></div>
+            <AlertTriangle className="w-5 h-5 shrink-0" /><div><p className="font-bold">リクエスト上限に達しています</p><p className="text-xs opacity-70 mt-1">一度にリクエストできるのは3曲までです。</p></div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -267,11 +203,39 @@ const RequestModal = ({
               <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">コメント</label>
               <textarea value={comment} onChange={(e) => setComment(e.target.value)} className="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 focus:border-green-500 outline-none text-white h-20 resize-none" placeholder="一言どうぞ！" />
             </div>
-            <button type="submit" disabled={isSending} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-slate-700 text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2">
-              {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-5 h-5" /> 送信する</>}
-            </button>
+            <button type="submit" disabled={isSending} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-slate-700 text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2">{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-5 h-5" /> 送信する</>}</button>
           </form>
         )}
+      </div>
+    </div>
+  );
+};
+
+/* --- みんなのリクエストコンポーネント --- */
+const RequestQueue = ({ requests, isDarkMode }: { requests: RequestData[], isDarkMode: boolean }) => {
+  const pendingRequests = requests.filter(r => r.status === 'pending').sort((a,b) => a.createdAt - b.createdAt);
+  
+  if (pendingRequests.length === 0) return null;
+
+  return (
+    <div className={`mt-8 mb-8 p-6 rounded-2xl border ${isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white border-slate-200"}`}>
+      <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+        <MessageSquare className="w-5 h-5 text-blue-500" />
+        みんなのリクエスト ({pendingRequests.length}件)
+      </h3>
+      <div className="space-y-3 max-h-60 overflow-y-auto pr-2 scrollbar-thin">
+        {pendingRequests.map((req, i) => (
+          <div key={i} className={`p-3 rounded-xl flex items-center gap-3 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isDarkMode ? "bg-slate-700 text-slate-400" : "bg-white text-slate-500 border border-slate-200"}`}>
+              {i + 1}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-bold truncate ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>{req.songTitle}</div>
+              <div className="text-xs text-slate-500 truncate">by {req.requesterName}</div>
+            </div>
+            {req.comment && <div className="text-xs text-slate-500 bg-slate-500/10 px-2 py-1 rounded max-w-[100px] truncate">💬 {req.comment}</div>}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -419,7 +383,6 @@ export default function PublicUserPage() {
 
       <div className="max-w-4xl mx-auto px-4 pt-10 relative z-10">
         <div className={`text-center mb-10 border rounded-3xl p-8 shadow-xl ${isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-slate-200"}`}>
-          {/* ★修正: アイコン画像があればそれを表示、なければデフォルト */}
           <div className={`inline-block mb-4 rounded-full p-1 ring-2 shadow-lg overflow-hidden ${isDarkMode ? "bg-slate-800 ring-slate-700" : "bg-slate-100 ring-slate-200"}`}>
             {profile?.avatarUrl ? (
               <img src={profile.avatarUrl} alt="Icon" className="w-24 h-24 rounded-full object-cover" />
@@ -430,7 +393,6 @@ export default function PublicUserPage() {
           <h1 className="text-3xl md:text-4xl font-black mb-3 tracking-tight">{profile?.displayName || "配信者の歌リスト"} <span className={accentText}>🎤</span></h1>
           <p className="text-sm md:text-base max-w-lg mx-auto mb-6 opacity-80 whitespace-pre-wrap">{profile?.bio || "リクエスト募集中！"}</p>
           
-          {/* SNS Icons */}
           <div className="flex justify-center gap-4 mb-6">
             {profile?.twitter && <a href={`https://twitter.com/${profile.twitter}`} target="_blank" className="p-2 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition"><Twitter className="w-5 h-5" /></a>}
             {profile?.youtube && <a href={`https://youtube.com/${profile.youtube}`} target="_blank" className="p-2 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition"><Youtube className="w-5 h-5" /></a>}
@@ -443,6 +405,9 @@ export default function PublicUserPage() {
             <button onClick={() => setIsGachaOpen(true)} className="inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-white px-5 py-2.5 rounded-full font-bold text-sm transition shadow-lg"><Dice5 className="w-4 h-4" /> ガチャ</button>
           </div>
         </div>
+
+        {/* ★追加: みんなのリクエスト表示 */}
+        <RequestQueue requests={userRequests} isDarkMode={isDarkMode} />
 
         <div className="mb-6 space-y-4">
           <div className="relative">

@@ -41,11 +41,11 @@ export default function Home() {
             <Star className="w-3 h-3 fill-current" /> 配信者向けの決定版ツール
           </div>
           <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight tracking-tight">
-            あなたの「歌枠」を<br/>もっと楽しく、スマートに。
+            歌枠のリクエスト管理を<br/>これひとつで完結。
           </h1>
           <p className="text-lg md:text-xl text-slate-500 mb-10 max-w-2xl mx-auto leading-relaxed">
-            リスナーからのリクエスト管理、持ち歌リストの公開、<br className="hidden md:block"/>
-            そして「ガチャ機能」まで。すべてがこれひとつで完結します。
+            リスナーからのリクエスト整理、持ち歌リストの検索機能、<br className="hidden md:block"/>
+            そして「ガチャ機能」まで。面倒な作業を自動化して、歌うことにもっと集中できます。
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -74,19 +74,19 @@ export default function Home() {
             <FeatureCard 
               icon={ListMusic} 
               title="持ち歌リスト公開" 
-              desc="CSVで一括登録も可能。検索機能やカテゴリ分けで、リスナーが見やすいリストを自動生成します。"
+              desc="CSVで一括登録も可能。強力な検索機能やカテゴリ分けで、リスナーが見やすいリストを自動で生成します。"
               color="bg-blue-500"
             />
             <FeatureCard 
               icon={Mic2} 
               title="リクエスト管理" 
-              desc="届いたリクエストを承認・完了・却下でカンタン管理。配信中の「次なに歌う？」に迷いません。"
+              desc="届いたリクエストを承認・完了・却下でカンタン管理。重複チェックや連続投稿の制限機能も標準搭載。"
               color="bg-green-500"
             />
             <FeatureCard 
               icon={CheckCircle2} 
               title="活動の記録" 
-              desc="歌った回数や最終歌唱日を自動記録。「これ前いつ歌ったっけ？」がすぐ分かります。"
+              desc="歌った回数や最終歌唱日を自動記録。「これ前いつ歌ったっけ？」が一目で分かります。セトリ保存もワンクリック。"
               color="bg-pink-500"
             />
           </div>
