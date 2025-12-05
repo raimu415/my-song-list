@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { db, auth, googleProvider, twitterProvider } from "@/lib/firebase"; // ★twitterProvider追加
+import { db, auth, googleProvider, twitterProvider } from "@/lib/firebase"; 
 import { ref, onValue, runTransaction, get, push } from "firebase/database";
 import { 
   signInWithPopup, 
@@ -13,7 +13,7 @@ import {
 import { 
   Music, Heart, User as UserIcon, Share2, Twitter, Filter, Loader2, Mic2, 
   X, Send, LogIn, LogOut, Music2, FileText, Dice5, Trophy, AlertTriangle, Sun, Moon,
-  Youtube, Twitch, Clock, CalendarDays
+  Youtube, Twitch, Clock, CalendarDays, RefreshCw, ChevronDown
 } from 'lucide-react';
 
 /* --- 型定義 --- */
@@ -35,6 +35,7 @@ type Song = {
 type Profile = {
   displayName?: string;
   bio?: string;
+  avatarUrl?: string; // ★追加: アイコン画像のURL
   twitter?: string;
   youtube?: string;
   twitch?: string;
@@ -60,7 +61,7 @@ const normalizeText = (text: string) => {
     .replace(/[\u3041-\u3096]/g, (s) => String.fromCharCode(s.charCodeAt(0) + 0x60));
 };
 
-/* --- ログインモーダル (Google / Twitter選択) --- */
+/* --- ログインモーダル --- */
 const LoginModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   if (!isOpen) return null;
 
@@ -79,7 +80,6 @@ const LoginModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void 
       <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center relative animate-in zoom-in duration-200">
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
         <h2 className="text-lg font-bold text-slate-800 mb-6">ログインしてリクエスト</h2>
-        
         <div className="flex flex-col gap-3">
           <button onClick={() => handleLogin(googleProvider)} className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl transition shadow-sm">
              Googleでログイン
@@ -93,19 +93,42 @@ const LoginModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void 
   );
 };
 
-/* --- ガチャモーダル --- */
-const GachaModal = ({ isOpen, onClose, songs }: { isOpen: boolean, onClose: () => void, songs: Song[] }) => {
+/* --- ガチャモーダル (強化版) --- */
+const GachaModal = ({ isOpen, onClose, songs, categories }: { isOpen: boolean, onClose: () => void, songs: Song[], categories: string[] }) => {
   const [result, setResult] = useState<Song | null>(null);
   const [animating, setAnimating] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("ALL");
 
+  // ガチャを引くロジック
+  const drawGacha = () => {
+    // 1. カテゴリで絞り込み
+    const targets = selectedCategory === "ALL" 
+      ? songs 
+      : songs.filter(s => s.category === selectedCategory);
+
+    if (targets.length === 0) {
+      alert("このカテゴリには曲がありません！");
+      return;
+    }
+
+    // 2. アニメーション開始
+    setResult(null);
+    setAnimating(true);
+
+    setTimeout(() => {
+      const random = targets[Math.floor(Math.random() * targets.length)];
+      setResult(random);
+      setAnimating(false);
+    }, 1500);
+  };
+
+  // モーダルが開いた瞬間は自動では引かない（選ばせるため）
+  // 閉じたときにリセット
   useEffect(() => {
-    if (isOpen && !result) {
-      setAnimating(true);
-      setTimeout(() => {
-        const random = songs[Math.floor(Math.random() * songs.length)];
-        setResult(random);
-        setAnimating(false);
-      }, 1500);
+    if (!isOpen) {
+      setResult(null);
+      setAnimating(false);
+      setSelectedCategory("ALL");
     }
   }, [isOpen]);
 
@@ -115,29 +138,59 @@ const GachaModal = ({ isOpen, onClose, songs }: { isOpen: boolean, onClose: () =
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-8 text-center relative">
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
-        <h2 className="text-xl font-bold text-white mb-6 flex items-center justify-center gap-2">
+        <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-center gap-2">
           <Dice5 className="w-6 h-6 text-yellow-400" /> 今日のラッキー曲
         </h2>
         
-        {animating ? (
-          <div className="py-10">
-            <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
-            <p className="mt-4 text-slate-300 font-bold animate-pulse">選曲中...</p>
-          </div>
-        ) : result ? (
-          <div className="animate-in zoom-in duration-300">
-            <p className="text-sm text-slate-400 mb-2">{result.artist}</p>
-            <p className="text-2xl font-black text-white mb-6 leading-tight">{result.title}</p>
-            <div className="bg-slate-800 rounded-lg p-3 text-xs text-slate-400 mb-6">この曲をリクエストしてみる？</div>
-            <button onClick={onClose} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-full transition">閉じる</button>
-          </div>
-        ) : null}
+        {/* 結果表示エリア */}
+        <div className="min-h-[200px] flex items-center justify-center">
+          {animating ? (
+            <div className="py-10">
+              <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
+              <p className="mt-4 text-slate-300 font-bold animate-pulse">選曲中...</p>
+            </div>
+          ) : result ? (
+            <div className="animate-in zoom-in duration-300 w-full">
+              <p className="text-sm text-slate-400 mb-2">{result.artist}</p>
+              <p className="text-2xl font-black text-white mb-6 leading-tight">{result.title}</p>
+              <div className="bg-slate-800 rounded-lg p-3 text-xs text-slate-400 mb-6">この曲をリクエストしてみる？</div>
+            </div>
+          ) : (
+            <div className="text-slate-400 text-sm">
+              <p className="mb-4">カテゴリーを選んでガチャを回そう！</p>
+              <Music className="w-12 h-12 mx-auto opacity-20" />
+            </div>
+          )}
+        </div>
+
+        {/* コントロールエリア */}
+        <div className="space-y-3 mt-4">
+          <select 
+            value={selectedCategory} 
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            disabled={animating}
+            className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none"
+          >
+            <option value="ALL">すべてのカテゴリー</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <button 
+            onClick={drawGacha} 
+            disabled={animating}
+            className={`w-full font-bold py-3 px-6 rounded-full transition flex items-center justify-center gap-2 ${
+              result ? "bg-white text-slate-900 hover:bg-slate-100" : "bg-yellow-500 text-white hover:bg-yellow-400"
+            }`}
+          >
+            {result ? <><RefreshCw className="w-4 h-4" /> もう一回引く</> : "ガチャを回す！"}
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-/* --- リクエストモーダル (制限チェック強化) --- */
+/* --- リクエストモーダル (省略なし) --- */
 const RequestModal = ({ 
   isOpen, onClose, song, pageOwnerId, viewer, userRequests
 }: { 
@@ -148,7 +201,6 @@ const RequestModal = ({
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
-  // UI表示用の制限チェック
   const pendingCount = userRequests.filter(r => r.requesterUid === viewer.uid && r.status === 'pending').length;
   const isLimitReached = pendingCount >= 3;
 
@@ -240,10 +292,9 @@ export default function PublicUserPage() {
   
   const [requestTarget, setRequestTarget] = useState<Song | null>(null);
   const [isGachaOpen, setIsGachaOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false); // ★ログインモーダル用
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // 明示的にfalseでない限り、true（受付中）とみなす
   const isRequestEnabled = profile?.isRequestEnabled !== false;
 
   const themeColors: {[key: string]: string} = {
@@ -329,7 +380,6 @@ export default function PublicUserPage() {
 
   const handleRequestClick = (song: Song) => {
     if (!isRequestEnabled) { alert("現在リクエストの受付は停止中です🙇‍♂️"); return; }
-    // ★ログインしていない場合はモーダルを出す
     if (!viewer) { 
       if (window.confirm("リクエストにはログインが必要です。ログインしますか？")) {
         setIsLoginModalOpen(true);
@@ -360,7 +410,6 @@ export default function PublicUserPage() {
                 <button onClick={() => signOut(auth)} className="ml-1 text-slate-400 hover:text-red-400"><LogOut className="w-4 h-4" /></button>
               </div>
             ) : (
-              // ★変更: ログインボタンを押すとモーダルを開く
               <button onClick={() => setIsLoginModalOpen(true)} className={`text-xs font-bold px-3 py-1.5 rounded-full transition flex items-center gap-1 text-white ${accentBg}`}><LogIn className="w-3 h-3" /> ログイン</button>
             )}
             <Link href="/" className={`text-xs font-bold px-3 py-1.5 rounded-full transition ${isDarkMode ? "bg-white/10 text-slate-300" : "bg-slate-200 text-slate-600"}`}>リスト作成</Link>
@@ -370,7 +419,14 @@ export default function PublicUserPage() {
 
       <div className="max-w-4xl mx-auto px-4 pt-10 relative z-10">
         <div className={`text-center mb-10 border rounded-3xl p-8 shadow-xl ${isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-slate-200"}`}>
-          <div className={`inline-block p-4 rounded-full mb-4 ring-2 shadow-lg ${isDarkMode ? "bg-slate-800 ring-slate-700" : "bg-slate-100 ring-slate-200"}`}><UserIcon className={`w-10 h-10 ${accentText}`} /></div>
+          {/* ★修正: アイコン画像があればそれを表示、なければデフォルト */}
+          <div className={`inline-block mb-4 rounded-full p-1 ring-2 shadow-lg overflow-hidden ${isDarkMode ? "bg-slate-800 ring-slate-700" : "bg-slate-100 ring-slate-200"}`}>
+            {profile?.avatarUrl ? (
+              <img src={profile.avatarUrl} alt="Icon" className="w-24 h-24 rounded-full object-cover" />
+            ) : (
+              <div className="w-24 h-24 flex items-center justify-center"><UserIcon className={`w-12 h-12 ${accentText}`} /></div>
+            )}
+          </div>
           <h1 className="text-3xl md:text-4xl font-black mb-3 tracking-tight">{profile?.displayName || "配信者の歌リスト"} <span className={accentText}>🎤</span></h1>
           <p className="text-sm md:text-base max-w-lg mx-auto mb-6 opacity-80 whitespace-pre-wrap">{profile?.bio || "リクエスト募集中！"}</p>
           
@@ -442,7 +498,7 @@ export default function PublicUserPage() {
           )}
         </div>
       </div>
-      <GachaModal isOpen={isGachaOpen} onClose={() => setIsGachaOpen(false)} songs={songs} />
+      <GachaModal isOpen={isGachaOpen} onClose={() => setIsGachaOpen(false)} songs={songs} categories={categories} />
       {viewer && requestTarget && pageOwnerId && <RequestModal isOpen={!!requestTarget} song={requestTarget} onClose={() => setRequestTarget(null)} pageOwnerId={pageOwnerId} viewer={viewer} userRequests={userRequests} />}
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
     </div>
