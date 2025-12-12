@@ -14,7 +14,7 @@ import {
   ChevronDown, ChevronUp, BarChart3, PieChart, Activity, Star, 
   Volume2, Bell, Share2, Palette, Trash2, RotateCcw, ClipboardList, Sparkles, ArrowRight, AlertTriangle,
   Home as HomeIcon, LayoutTemplate, Sliders, Smartphone, ShieldAlert,
-  User as UserIcon, Globe, Instagram, Facebook, Tag, Upload // ★追加
+  User as UserIcon, Globe, Instagram, Facebook, Tag, Upload, Monitor, Calendar, Lock, FolderHeart
 } from 'lucide-react';
 
 /* --- Types --- */
@@ -26,12 +26,16 @@ type SongData = {
   tags?: string[];
   key?: string;
   memo?: string;
+  // ★No.5 自分用メモ
+  privateMemo?: string;
   reading?: string;
   lyricsUrl?: string;
   youtubeUrl?: string;
   bpm?: string;
   noteRange?: string;
   rating?: number;
+  // ★No.1 練習進捗 (0-100)
+  practiceRate?: number;
   isSetlist?: boolean;
   setlistOrder?: number;
   isPinned?: boolean;
@@ -59,6 +63,13 @@ type SetlistLog = {
   songs: { title: string; artist: string; id: string }[];
 };
 
+// ★No.4 セトリプリセット型
+type SetlistPreset = {
+  id: string;
+  name: string;
+  songIds: string[];
+};
+
 type UserProfile = {
   displayName: string;
   bio: string;
@@ -68,21 +79,29 @@ type UserProfile = {
   twitch?: string;
   tiktok?: string;
   otherUrl?: string;
-  // ★追加: 任意のリンク
   customLinks?: { label: string; url: string; id: string }[];
   themeColor: string;
   fontFamily: string;
   backgroundImage: string;
+  backgroundOpacity?: number; 
+  overlayOpacity?: number;
+  // ★No.21 季節テーマ追加
+  themeStyle?: 'default' | 'neon' | 'retro' | 'japanese' | 'glitch' | 'sakura' | 'summer' | 'halloween' | 'winter';
   isRequestEnabled: boolean;
   customTags?: string[];
+  // ★No.7 タググループ
+  tagGroups?: { name: string; tags: string[] }[]; 
+  // ★No.2 NGワード
+  ngKeywords?: string[];
+  // ★No.28 スケジュール
+  schedule?: string;
   announcement?: { text: string; active: boolean };
   tagColors?: Record<string, string>;
   ngUsers?: Record<string, { name: string; date: number }>;
-  // ★追加: 拡張設定
   soundEnabled?: boolean;
-  isAcceptedKept?: boolean; // 承認済みをリストに残すか
-  defaultSortType?: 'newest' | 'artist' | 'title' | 'popular'; // デフォルトの並び順
-  isAutoCategoryEnabled?: boolean; // インポート時の自動分類
+  isAcceptedKept?: boolean;
+  defaultSortType?: 'newest' | 'artist' | 'title' | 'popular';
+  isAutoCategoryEnabled?: boolean;
 };
 
 const normalize = (text: string) => {
@@ -102,7 +121,31 @@ const COLOR_PALETTE: Record<string, string> = {
   orange: "bg-orange-100 text-orange-700 border-orange-200",
 };
 
-/* --- Utils: Sound Effect --- */
+/* --- Utils --- */
+const compressImage = (file: File, maxWidth: number = 1200, quality: number = 0.8): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) { height = (height * maxWidth) / width; width = maxWidth; }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error("Canvas error")); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
+};
+
 const playNotificationSound = () => {
   try {
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -161,7 +204,6 @@ const ActivityHeatmap = ({ logs }: { logs: any[] }) => {
   return (<div className="flex gap-1 justify-center mt-2">{days.map(day => { const c = counts[day] || 0; const color = c === 0 ? "bg-slate-100" : c < 3 ? "bg-green-200" : c < 5 ? "bg-green-400" : "bg-green-600"; return <div key={day} className={`w-3 h-3 rounded-sm ${color}`} title={`${day}: ${c}回`} />; })}</div>);
 };
 
-/* --- Utils for Components --- */
 const ToggleSwitch = ({ checked, onChange, label, description }: { checked: boolean, onChange: (v: boolean) => void, label: string, description?: string }) => (
   <div className="flex items-center justify-between py-3">
     <div>
@@ -177,7 +219,7 @@ const ToggleSwitch = ({ checked, onChange, label, description }: { checked: bool
   </div>
 );
 
-/* --- ★新機能: ホームメニュー画面 --- */
+/* --- Home Menu --- */
 const HomeMenu = ({ onNavigate, onOpenImport, onOpenSetlist, onAddSong, stats }: any) => {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 md:pb-0">
@@ -187,7 +229,6 @@ const HomeMenu = ({ onNavigate, onOpenImport, onOpenSetlist, onAddSong, stats }:
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* 曲リスト */}
         <button onClick={() => onNavigate('songs')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all text-left group relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><ListMusic className="w-24 h-24" /></div>
           <div className="bg-blue-50 w-12 h-12 rounded-xl flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform"><ListMusic className="w-6 h-6" /></div>
@@ -195,21 +236,18 @@ const HomeMenu = ({ onNavigate, onOpenImport, onOpenSetlist, onAddSong, stats }:
           <p className="text-xs text-slate-500 font-medium">全{stats.totalSongs}曲。検索・編集はこちら</p>
         </button>
 
-        {/* 曲を追加 */}
         <button onClick={onAddSong} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all text-left group">
           <div className="bg-indigo-50 w-12 h-12 rounded-xl flex items-center justify-center text-indigo-600 mb-4 group-hover:scale-110 transition-transform"><Plus className="w-6 h-6" /></div>
           <h3 className="font-bold text-lg text-slate-800 mb-1">曲を1曲追加</h3>
           <p className="text-xs text-slate-500 font-medium">手動で新しい曲を登録します</p>
         </button>
 
-        {/* スマートインポート */}
         <button onClick={onOpenImport} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-yellow-200 transition-all text-left group">
           <div className="bg-yellow-50 w-12 h-12 rounded-xl flex items-center justify-center text-yellow-600 mb-4 group-hover:scale-110 transition-transform"><Sparkles className="w-6 h-6" /></div>
           <h3 className="font-bold text-lg text-slate-800 mb-1">一括インポート</h3>
           <p className="text-xs text-slate-500 font-medium">CSVやテキストからまとめて登録</p>
         </button>
 
-        {/* リクエスト */}
         <button onClick={() => onNavigate('requests')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-green-200 transition-all text-left group relative">
           {stats.pendingRequests > 0 && (<span className="absolute top-4 right-4 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">{stats.pendingRequests} 件の未読</span>)}
           <div className="bg-green-50 w-12 h-12 rounded-xl flex items-center justify-center text-green-600 mb-4 group-hover:scale-110 transition-transform"><MessageSquare className="w-6 h-6" /></div>
@@ -217,21 +255,18 @@ const HomeMenu = ({ onNavigate, onOpenImport, onOpenSetlist, onAddSong, stats }:
           <p className="text-xs text-slate-500 font-medium">リスナーからのリクエストを承認</p>
         </button>
 
-        {/* 本日のセトリ */}
         <button onClick={onOpenSetlist} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-orange-200 transition-all text-left group">
           <div className="bg-orange-50 w-12 h-12 rounded-xl flex items-center justify-center text-orange-600 mb-4 group-hover:scale-110 transition-transform"><ClipboardList className="w-6 h-6" /></div>
           <h3 className="font-bold text-lg text-slate-800 mb-1">本日のセットリスト</h3>
           <p className="text-xs text-slate-500 font-medium">現在選択中の曲を確認・保存</p>
         </button>
 
-        {/* 分析・ログ */}
         <button onClick={() => onNavigate('history')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-purple-200 transition-all text-left group">
           <div className="bg-purple-50 w-12 h-12 rounded-xl flex items-center justify-center text-purple-600 mb-4 group-hover:scale-110 transition-transform"><Activity className="w-6 h-6" /></div>
           <h3 className="font-bold text-lg text-slate-800 mb-1">分析 / ログ</h3>
           <p className="text-xs text-slate-500 font-medium">過去のセトリや統計データ</p>
         </button>
 
-        {/* 設定 */}
         <button onClick={() => onNavigate('settings')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-slate-300 transition-all text-left group">
           <div className="bg-slate-100 w-12 h-12 rounded-xl flex items-center justify-center text-slate-600 mb-4 group-hover:scale-110 transition-transform"><Settings className="w-6 h-6" /></div>
           <h3 className="font-bold text-lg text-slate-800 mb-1">設定</h3>
@@ -242,7 +277,7 @@ const HomeMenu = ({ onNavigate, onOpenImport, onOpenSetlist, onAddSong, stats }:
   );
 };
 
-/* --- ★新機能: 高機能インポートモーダル --- */
+/* --- Smart Import Modal --- */
 const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToast, isAutoCategoryEnabled = true }: any) => {
   const [step, setStep] = useState<'input' | 'preview'>('input');
   const [inputText, setInputText] = useState("");
@@ -252,10 +287,8 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
 
   if (!isOpen) return null;
 
-  // 1. 解析 & プレビュー生成
   const handleAnalyze = () => {
     const lines = inputText.split(/\r\n|\n|\r/);
-    // 自動カテゴリ設定がONの場合のみマップを作成
     const categoryMap = isAutoCategoryEnabled ? categories.reduce((acc: any, cat: string) => { acc[cat.toLowerCase()] = cat; return acc; }, {}) : {};
     const artistCategoryMap: Record<string, string> = {};
     if (isAutoCategoryEnabled) {
@@ -295,23 +328,19 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
     setStep('preview');
   };
 
-  // 2. 一括適用
   const applyBulk = (field: 'artist' | 'category', value: string) => {
     if (!value) return;
     setPreviewData(prev => prev.map(item => ({ ...item, [field]: value })));
   };
 
-  // 3. 個別編集
   const updateItem = (id: string, field: string, value: string) => {
     setPreviewData(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
 
-  // 4. 削除
   const removeItem = (id: string) => {
     setPreviewData(prev => prev.filter(item => item.id !== id));
   };
 
-  // 5. 保存 (DB登録)
   const handleSave = async () => {
     if (!confirm(`${previewData.length}曲を追加しますか？`)) return;
     const promises = previewData.map(item => 
@@ -323,7 +352,6 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
     await Promise.all(promises);
     showToast(`${previewData.length}曲を追加しました！`);
     onClose();
-    // Reset
     setStep('input');
     setInputText("");
     setPreviewData([]);
@@ -352,7 +380,6 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
             />
           ) : (
             <div className="flex flex-col h-full gap-4">
-              {/* 一括操作バー */}
               <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 flex flex-wrap gap-3 items-end">
                 <div className="flex-1 min-w-[140px]">
                   <label className="text-[10px] font-bold text-blue-800 uppercase block mb-1">アーティスト一括設定</label>
@@ -373,7 +400,6 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
                 </div>
               </div>
 
-              {/* プレビューリスト */}
               <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl bg-white">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-100 text-slate-500 font-bold text-xs sticky top-0 z-10 shadow-sm">
@@ -426,7 +452,7 @@ const SmartImportModal = ({ isOpen, onClose, userId, categories, songs, showToas
   );
 };
 
-/* --- 1. Song Manager --- */
+/* --- Song Manager --- */
 const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, categories, showToast, onOpenImport, defaultSortType = 'newest' }: any) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -572,11 +598,9 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
     return matchSearch && matchTab;
   }).sort((a: SongData, b: SongData) => {
     if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-    // ★設定: デフォルトの並び順
     if (defaultSortType === 'title') return a.title.localeCompare(b.title, "ja");
     if (defaultSortType === 'artist') return a.artist.localeCompare(b.artist, "ja");
     if (defaultSortType === 'popular') return (b.sungCount || 0) - (a.sungCount || 0);
-    // Default: newest
     return (b.createdAt || 0) - (a.createdAt || 0);
   });
 
@@ -584,7 +608,6 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
     ? categories.reduce((acc: any, cat: string) => { acc[cat] = filteredSongs.filter((s: SongData) => s.category === cat); return acc; }, {})
     : { "All": filteredSongs };
 
-  // ユニークなアーティストリスト（補完用）
   const uniqueArtists = Array.from(new Set(songs.map((s: any) => s.artist))).sort() as string[];
 
   return (
@@ -615,7 +638,6 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
               <input id="search-input" type="text" placeholder="検索... (Shift+F)" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 pr-4 py-2 rounded-xl border border-slate-200 w-full text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-slate-50 focus:bg-white transition-colors" />
               {searchTerm && <button onClick={() => setSearchTerm("")} className="absolute right-3 top-2.5 text-slate-400"><X className="w-4 h-4" /></button>}
             </div>
-            {/* ★変更: 親から受け取った onOpenImport を実行 */}
             <button onClick={onOpenImport} className="flex items-center gap-2 px-3 text-sm rounded-lg bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 text-yellow-700 font-bold transition-all shadow-sm">
               <Sparkles className="w-4 h-4" />
               <span className="hidden sm:inline">インポート</span>
@@ -643,7 +665,6 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
               </button>
             </div>
 
-            {/* アーティスト・カテゴリー一括変更フォーム */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="bg-white p-2 rounded-xl border border-blue-100 shadow-sm">
                 <label className="text-[10px] font-bold text-slate-400 block mb-1 ml-1 uppercase">アーティスト一括変更</label>
@@ -676,7 +697,7 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer"
                   onChange={(e) => {
                     if(e.target.value) handleBulkEdit('category', e.target.value);
-                    e.target.value = ""; // リセット
+                    e.target.value = "";
                   }}
                   defaultValue=""
                 >
@@ -767,12 +788,11 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
   );
 };
 
-// --- 2. Request Manager ---
+/* --- Request Manager --- */
 const RequestManager = ({ userId, ngUsers, requests, soundEnabled, showToast, isAcceptedKept = false }: any) => {
   const prevCountRef = useRef(0);
 
   useEffect(() => {
-    // 通知は「未読(pending)」が増えた時だけ鳴らすように調整
     const pendingCount = requests.filter((r: RequestData) => r.status === 'pending').length;
     if (pendingCount > prevCountRef.current) {
       if (soundEnabled) playNotificationSound();
@@ -824,12 +844,11 @@ const RequestManager = ({ userId, ngUsers, requests, soundEnabled, showToast, is
     showToast("ブロックしました");
   };
 
-  // ★修正: 設定(isAcceptedKept)に応じて表示対象を切り替え
   const activeRequests = requests.filter((r: RequestData) => {
     if (r.status === 'pending' || r.status === 'hold') return true;
-    if (r.status === 'accepted') return isAcceptedKept; // 設定がONなら表示、OFFなら非表示
+    if (r.status === 'accepted') return isAcceptedKept;
     return false;
-  }); 
+  });
 
   return (
     <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-4 md:p-6 mb-24 md:mb-0 min-h-[50vh]">
@@ -886,11 +905,11 @@ const RequestManager = ({ userId, ngUsers, requests, soundEnabled, showToast, is
   );
 };
 
-// --- History & Analytics ---
+/* --- History & Analytics --- */
 const HistoryManager = ({ userId, songs, requests, showToast }: any) => {
   const [activeTab, setActiveTab] = useState<'log' | 'analytics'>('log');
   const [setlists, setSetlists] = useState<SetlistLog[]>([]);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false); // ★セトリ画像用
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewLog, setPreviewLog] = useState<SetlistLog | null>(null);
   
   useEffect(() => {
@@ -997,140 +1016,166 @@ const HistoryManager = ({ userId, songs, requests, showToast }: any) => {
   );
 };
 
-/* --- ★大幅リニューアル: 高機能設定画面 --- */
+/* --- Profile Editor (拡張版・修正済み) --- */
+/* --- Profile Editor (拡張版・修正済み) --- */
 const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, onCategoriesUpdate, profile, setProfile, showToast }: any) => { 
   const [loading, setLoading] = useState(false);
-  const [activeConfigTab, setActiveConfigTab] = useState<'profile' | 'links' | 'categories' | 'tags' | 'system' | 'data'>('profile'); // ★tagsタブ追加
+  const [activeConfigTab, setActiveConfigTab] = useState<'profile' | 'links' | 'categories' | 'tags' | 'system' | 'data'>('profile'); 
   
-  // カテゴリ編集用State
+  // State群
   const [editingCategories, setEditingCategories] = useState<string[]>(categories);
   const [newCategory, setNewCategory] = useState("");
-
-  // ★タグ編集用State
   const [newTag, setNewTag] = useState("");
   const [newTagColor, setNewTagColor] = useState("gray");
-
-  // リンク編集用State
   const [newLink, setNewLink] = useState({ label: "", url: "" });
+  
+  // ★No.2 NGワード用
+  const [newNgWord, setNewNgWord] = useState("");
+  
+  // ★No.7 タググループ用
+  const [newGroupName, setNewGroupName] = useState("");
+  const [editingTagGroups, setEditingTagGroups] = useState<{name: string, tags: string[]}[]>(profile.tagGroups || []);
 
-  useEffect(() => {
-    setEditingCategories(categories);
-  }, [categories]);
+  useEffect(() => { setEditingCategories(categories); }, [categories]);
+  useEffect(() => { setEditingTagGroups(profile.tagGroups || []); }, [profile.tagGroups]);
+
+  // ★安全なタグリスト取得用ヘルパー
+  // Firebaseが配列をオブジェクトとして返してきた場合でも、強制的に配列に変換してクラッシュを防ぐ
+  const getSafeTags = (tags: any): string[] => {
+    if (!tags) return [];
+    if (Array.isArray(tags)) return tags;
+    return Object.values(tags) as string[];
+  };
+
+  const safeCustomTags = getSafeTags(customTags);
 
   const handleSave = async () => { 
     setLoading(true); 
-    // カテゴリの保存
-    await set(ref(db, `users/${userId}/settings/categories`), editingCategories);
-    // プロフィール・タグの保存
-    await update(ref(db, `users/${userId}/profile`), profile); 
-    await set(ref(db, `users/${userId}/settings/customTags`), customTags); 
-    
-    setLoading(false); 
-    showToast("設定をすべて保存しました！"); 
+    try {
+      await set(ref(db, `users/${userId}/settings/categories`), editingCategories);
+      
+      // タググループを含めたプロフィールデータの準備
+      const updatedProfile = { ...profile, tagGroups: editingTagGroups };
+
+      // ★修正: Firebaseは undefined を許容しないため、undefined を null に置換するか削除する
+      // JSON.stringify -> JSON.parse を通すことで undefined なプロパティを削除できます
+      const safeProfile = JSON.parse(JSON.stringify(updatedProfile));
+
+      await update(ref(db, `users/${userId}/profile`), safeProfile); 
+      await set(ref(db, `users/${userId}/settings/customTags`), customTags); 
+      
+      showToast("設定をすべて保存しました！"); 
+    } catch (e) {
+      console.error("Save failed:", e);
+      alert("保存に失敗しました。入力内容を確認してください。");
+    } finally {
+      setLoading(false); 
+    }
   };
-  
-  // ... (backupData, handleCopyObsUrl, addDemoData, handleUnblock functions are same)
+
+  // バックアップ等の関数群
   const backupData = async () => { const data = { profile, songs, categories, customTags, date: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `backup_${userId}.json`; a.click(); showToast("バックアップを作成しました"); };
   const handleCopyObsUrl = () => { const url = `${window.location.origin}/overlay/${userId}`; navigator.clipboard.writeText(url); showToast("OBS用URLをコピーしました(仮)"); };
   const addDemoData = async () => { if(!confirm("サンプル曲を追加しますか？")) return; const demoSongs = [{ title: "アイドル", artist: "YOASOBI", category: "J-POP" }, { title: "怪獣の花唄", artist: "Vaundy", category: "J-POP" }, { title: "残酷な天使のテーゼ", artist: "高橋洋子", category: "Anime" }]; demoSongs.forEach(async s => { await push(ref(db, `users/${userId}/songs`), { ...s, likes: 0, sungCount: 0, createdAt: Date.now() }); }); showToast("サンプル曲を追加しました"); };
   const handleUnblock = async (uid: string) => { if(!confirm("解除しますか？")) return; const newNg = {...profile.ngUsers}; delete newNg[uid]; setProfile({...profile, ngUsers: newNg}); await remove(ref(db, `users/${userId}/profile/ngUsers/${uid}`)); showToast("解除しました"); };
   const updateTagColor = (tag: string, color: string) => setProfile((prev: any) => ({ ...prev, tagColors: { ...prev.tagColors, [tag]: color } }));
-
-  // カテゴリ操作
-  const addCategory = () => {
-    if(!newCategory || editingCategories.includes(newCategory)) return;
-    setEditingCategories([...editingCategories, newCategory]);
-    setNewCategory("");
-  };
-  const removeCategory = (cat: string) => {
-    if(!confirm(`カテゴリ「${cat}」を削除しますか？`)) return;
-    setEditingCategories(editingCategories.filter(c => c !== cat));
-  };
-
-  // ★タグ操作
-  const addTag = () => {
-    if (!newTag || customTags.includes(newTag)) return;
-    onTagsUpdate([...customTags, newTag]);
-    updateTagColor(newTag, newTagColor);
-    setNewTag("");
-  };
-  const removeTag = (tag: string) => {
-    if(!confirm(`タグ「${tag}」を削除しますか？`)) return;
-    onTagsUpdate(customTags.filter((t: string) => t !== tag));
-  };
-
-  // カスタムリンク操作
-  const addCustomLink = () => {
-    if (!newLink.label || !newLink.url) return;
-    const currentLinks = profile.customLinks || [];
-    setProfile({ ...profile, customLinks: [...currentLinks, { ...newLink, id: Date.now().toString() }] });
-    setNewLink({ label: "", url: "" });
-  };
-  const removeCustomLink = (id: string) => {
-    setProfile({ ...profile, customLinks: (profile.customLinks || []).filter((l: any) => l.id !== id) });
-  };
-
-  // プリセットリンク追加
-  const addPresetLink = (label: string, urlPrefix: string) => {
-    setNewLink({ label, url: urlPrefix });
-  };
-
-  // ★画像アップロード処理 (Base64変換)
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'avatarUrl' | 'backgroundImage') => {
+  const addCategory = () => { if(!newCategory || editingCategories.includes(newCategory)) return; setEditingCategories([...editingCategories, newCategory]); setNewCategory(""); };
+  const removeCategory = (cat: string) => { if(!confirm(`カテゴリ「${cat}」を削除しますか？`)) return; setEditingCategories(editingCategories.filter(c => c !== cat)); };
+  // ★修正: customTags を直接参照せず safeCustomTags を使用
+  const addTag = () => { if (!newTag || safeCustomTags.includes(newTag)) return; onTagsUpdate([...safeCustomTags, newTag]); updateTagColor(newTag, newTagColor); setNewTag(""); };
+  const removeTag = (tag: string) => { if(!confirm(`タグ「${tag}」を削除しますか？`)) return; onTagsUpdate(safeCustomTags.filter((t: string) => t !== tag)); };
+  const addCustomLink = () => { if (!newLink.label || !newLink.url) return; const currentLinks = profile.customLinks || []; setProfile({ ...profile, customLinks: [...currentLinks, { ...newLink, id: Date.now().toString() }] }); setNewLink({ label: "", url: "" }); };
+  const removeCustomLink = (id: string) => { setProfile({ ...profile, customLinks: (profile.customLinks || []).filter((l: any) => l.id !== id) }); };
+  const addPresetLink = (label: string, urlPrefix: string) => { setNewLink({ label, url: urlPrefix }); };
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'avatarUrl' | 'backgroundImage') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // サイズチェック (例: 200KB以下)
-    if (file.size > 200 * 1024) {
-      alert("画像サイズが大きすぎます。200KB以下の画像を選択してください。");
+    // 変更点1: 上限を 10MB に緩和
+    const MAX_SIZE_MB = 10;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      alert(`画像サイズが大きすぎます。${MAX_SIZE_MB}MB以下の画像を選択してください。`);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setProfile({ ...profile, [field]: base64 });
-    };
-    reader.readAsDataURL(file);
+    try {
+      setLoading(true); // ロード中表示
+      
+      // 変更点2: 圧縮処理を実行
+      // アイコンなら500px、背景なら1200pxを目安にリサイズ
+      const maxWidth = field === 'avatarUrl' ? 500 : 1200;
+      const compressedBase64 = await compressImage(file, maxWidth, 0.8);
+
+      // 保存
+      setProfile({ ...profile, [field]: compressedBase64 });
+      showToast("画像を読み込みました");
+    } catch (error) {
+      console.error("Image processing failed", error);
+      alert("画像の処理に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ★No.2 NGワード追加
+  const addNgWord = () => {
+    if(!newNgWord) return;
+    const current = profile.ngKeywords || [];
+    if(!current.includes(newNgWord)) setProfile({...profile, ngKeywords: [...current, newNgWord]});
+    setNewNgWord("");
+  };
+  const removeNgWord = (word: string) => {
+    const current = profile.ngKeywords || [];
+    setProfile({...profile, ngKeywords: current.filter((w: string) => w !== word)});
+  };
+
+  // ★No.7 タググループ操作
+  const addTagGroup = () => {
+    if(!newGroupName) return;
+    setEditingTagGroups([...editingTagGroups, { name: newGroupName, tags: [] }]);
+    setNewGroupName("");
+  };
+  const toggleTagInGroup = (groupIndex: number, tag: string) => {
+    const newGroups = [...editingTagGroups];
+    const group = newGroups[groupIndex];
+    // ★修正: group.tags が undefined の場合（Firebaseで空配列が消えた場合）に空配列を割り当てるガード処理
+    const currentTags = group.tags || [];
+
+    if(currentTags.includes(tag)) {
+      group.tags = currentTags.filter(t => t !== tag);
+    } else {
+      group.tags = [...currentTags, tag];
+    }
+    setEditingTagGroups(newGroups);
+  };
+  const removeTagGroup = (index: number) => {
+    setEditingTagGroups(editingTagGroups.filter((_, i) => i !== index));
   };
 
   return (
     <div className="grid grid-cols-1 gap-6 mb-32 pb-20">
+      {/* ... ヘッダーとタブ ... */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h3 className="font-bold text-xl text-slate-800 flex items-center gap-2"><Settings className="w-6 h-6 text-slate-400" /> 設定コントロール</h3>
-        <button onClick={handleSave} disabled={loading} className="flex items-center justify-center gap-2 bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20 active:scale-95 w-full md:w-auto">
-          {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />} 設定を保存する
+        <button onClick={handleSave} disabled={loading} className="flex items-center justify-center gap-2 bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition shadow-lg">
+          {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />} 保存
         </button>
       </div>
-
-      {/* タブナビゲーション */}
+      
       <div className="flex overflow-x-auto pb-2 scrollbar-hide gap-2">
-        {[
-          { id: 'profile', label: 'プロフィール', icon: UserIcon },
-          { id: 'links', label: 'リンク設定', icon: LinkIcon },
-          { id: 'categories', label: 'ジャンル', icon: Layers }, // Icon変更
-          { id: 'tags', label: 'タグ・色', icon: Palette }, // ★追加
-          { id: 'system', label: '表示・機能', icon: Sliders },
-          { id: 'data', label: 'データ管理', icon: ShieldAlert },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveConfigTab(tab.id as any)}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeConfigTab === tab.id ? "bg-blue-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-          >
+        {[{ id: 'profile', label: 'プロフィール', icon: UserIcon }, { id: 'links', label: 'リンク', icon: LinkIcon }, { id: 'categories', label: 'ジャンル', icon: Layers }, { id: 'tags', label: 'タグ・色', icon: Palette }, { id: 'system', label: 'システム', icon: Sliders }, { id: 'data', label: 'データ', icon: ShieldAlert }].map(tab => (
+          <button key={tab.id} onClick={() => setActiveConfigTab(tab.id as any)} className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeConfigTab === tab.id ? "bg-blue-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
             <tab.icon className="w-4 h-4" /> {tab.label}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        
-        {/* 1. プロフィール設定 */}
         {activeConfigTab === 'profile' && (
           <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6 animate-in fade-in">
-            <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><UserIcon className="w-5 h-5" /> 基本プロフィール</h4>
-            <div className="space-y-6">
-              <div>
+             {/* ... 既存プロフィール項目 ... */}
+             <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><UserIcon className="w-5 h-5" /> 基本プロフィール</h4>
+             <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">表示名</label>
                 <input type="text" placeholder="配信者名" value={profile.displayName} onChange={e => setProfile({...profile, displayName: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200 outline-none text-slate-900 bg-white/50 focus:bg-white transition" />
               </div>
@@ -1144,7 +1189,6 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                       {profile.avatarUrl ? <img src={profile.avatarUrl} className="w-full h-full object-cover" /> : <UserIcon className="w-8 h-8 m-4 text-slate-300" />}
                     </div>
                     <div className="flex-1 space-y-2">
-                      {/* ファイル選択ボタン */}
                       <label className="flex items-center justify-center gap-2 w-full p-2 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-pointer hover:bg-blue-100 transition text-xs font-bold">
                         <Upload className="w-4 h-4" /> 写真を選択
                         <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'avatarUrl')} className="hidden" />
@@ -1160,7 +1204,6 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                       {profile.backgroundImage ? <img src={profile.backgroundImage} className="w-full h-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-xs">No Image</div>}
                     </div>
                     <div className="flex-1 space-y-2">
-                      {/* ファイル選択ボタン */}
                       <label className="flex items-center justify-center gap-2 w-full p-2 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-pointer hover:bg-blue-100 transition text-xs font-bold">
                         <Upload className="w-4 h-4" /> 写真を選択
                         <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'backgroundImage')} className="hidden" />
@@ -1175,9 +1218,14 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">自己紹介</label>
                 <textarea placeholder="リスナーに向けたメッセージ..." value={profile.bio} onChange={e => setProfile({...profile, bio: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200 outline-none h-24 resize-none text-slate-900 bg-white/50 focus:bg-white transition" />
               </div>
-
-              {/* お知らせバー */}
-              <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
+             
+             {/* ★No.28 スケジュール設定 */}
+             <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-2"><Calendar className="w-3 h-3" /> 次回の配信スケジュール</label>
+                <input type="text" placeholder="例: 12/25 21:00〜 クリスマス歌枠！" value={profile.schedule || ""} onChange={e => setProfile({...profile, schedule: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200 outline-none text-slate-900 bg-white/50 focus:bg-white transition" />
+             </div>
+             
+             <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
                 <div className="flex justify-between items-center mb-3">
                   <label className="text-sm font-bold text-yellow-800 flex items-center gap-2"><Megaphone className="w-4 h-4" /> お知らせバー</label>
                   <ToggleSwitch checked={profile.announcement?.active || false} onChange={v => setProfile({...profile, announcement: { ...profile.announcement, active: v }})} label="" />
@@ -1190,16 +1238,14 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                   className="w-full p-3 text-sm border border-yellow-200 rounded-lg bg-white text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-yellow-400 transition shadow-sm" 
                 />
               </div>
-            </div>
           </div>
         )}
 
-        {/* 2. リンク設定 (既存機能のまま維持) */}
+        {/* ... (links, categories は省略なしで記述) ... */}
         {activeConfigTab === 'links' && (
           <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6 animate-in fade-in">
-            {/* ... (既存のリンク設定コード) ... */}
+            {/* ...既存のリンク設定... */}
             <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><LinkIcon className="w-5 h-5" /> リンク設定</h4>
-            
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase">プリセットから追加</label>
               <div className="flex gap-2 flex-wrap">
@@ -1210,7 +1256,6 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                 <button onClick={() => addPresetLink("その他", "https://")} className="px-3 py-1.5 rounded-lg bg-slate-50 text-slate-500 text-xs font-bold border border-slate-100 hover:bg-slate-100 transition flex items-center gap-1"><Globe className="w-3 h-3" /> カスタム</button>
               </div>
             </div>
-
             <div className="flex gap-2 items-end bg-slate-50 p-3 rounded-xl border border-slate-200">
               <div className="flex-1">
                 <label className="text-[10px] text-slate-400 font-bold mb-1 block">サイト名・ラベル</label>
@@ -1222,14 +1267,11 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
               </div>
               <button onClick={addCustomLink} disabled={!newLink.label || !newLink.url} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">追加</button>
             </div>
-
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase">登録済みのリンク</label>
               {(!profile.customLinks || profile.customLinks.length === 0) && (!profile.twitter && !profile.youtube) && <p className="text-sm text-slate-400 text-center py-4">リンクは登録されていません</p>}
-              
               {profile.twitter && <div className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl"><div className="flex items-center gap-2 text-blue-500"><Twitter className="w-4 h-4" /><span className="text-sm font-bold">Twitter</span><span className="text-xs text-slate-400">@{profile.twitter}</span></div><button onClick={() => setProfile({...profile, twitter: ""})} className="text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button></div>}
               {profile.youtube && <div className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl"><div className="flex items-center gap-2 text-red-500"><Youtube className="w-4 h-4" /><span className="text-sm font-bold">YouTube</span><span className="text-xs text-slate-400 truncate max-w-[200px]">{profile.youtube}</span></div><button onClick={() => setProfile({...profile, youtube: ""})} className="text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button></div>}
-
               {profile.customLinks?.map((link: any) => (
                 <div key={link.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
                   <div className="flex items-center gap-3">
@@ -1245,17 +1287,14 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
             </div>
           </div>
         )}
-
-        {/* 3. ジャンル管理 */}
         {activeConfigTab === 'categories' && (
           <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6 animate-in fade-in">
+            {/* ...既存のカテゴリ設定... */}
             <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Layers className="w-5 h-5" /> ジャンル(カテゴリ)管理</h4>
-            
             <div className="flex gap-2">
               <input type="text" placeholder="新しいジャンル名 (例: K-POP)" value={newCategory} onChange={e => setNewCategory(e.target.value)} className="flex-1 p-3 rounded-xl border border-slate-200 text-sm outline-none" />
               <button onClick={addCategory} disabled={!newCategory} className="bg-green-600 disabled:opacity-50 text-white px-6 rounded-xl font-bold hover:bg-green-700 transition">追加</button>
             </div>
-
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {editingCategories.map((cat, i) => (
                 <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
@@ -1268,10 +1307,10 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
           </div>
         )}
 
-        {/* ★ 4. タグ・色設定 (新機能) */}
         {activeConfigTab === 'tags' && (
           <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6 animate-in fade-in">
-            <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Palette className="w-5 h-5" /> タグ・カラー設定</h4>
+            {/* ... 既存タグ設定 ... */}
+            <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Palette className="w-5 h-5" /> タグ設定</h4>
             
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">新しいタグを追加</label>
@@ -1290,13 +1329,15 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                 <button onClick={addTag} disabled={!newTag} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-700 transition">追加</button>
               </div>
             </div>
-
+            
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-500 uppercase">タグ一覧・色変更</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {customTags.map((tag: string) => (
+                {/* ★修正: safeCustomTags を使用 */}
+                {safeCustomTags.map((tag: string) => (
                   <div key={tag} className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-2 rounded-lg">
-                    <div className={`w-3 h-3 rounded-full ${COLOR_PALETTE[profile.tagColors?.[tag] || "gray"].split(" ")[0]}`}></div>
+                    {/* ★修正箇所: 不正なキーに対するガード処理を追加 */}
+                    <div className={`w-3 h-3 rounded-full ${(COLOR_PALETTE[profile.tagColors?.[tag] || "gray"] || COLOR_PALETTE["gray"]).split(" ")[0]}`}></div>
                     <span className="flex-1 text-sm font-bold text-slate-700">#{tag}</span>
                     <select value={profile.tagColors?.[tag] || "gray"} onChange={(e) => updateTagColor(tag, e.target.value)} className="text-xs border-none bg-transparent outline-none cursor-pointer text-slate-500">
                       <option value="gray">灰</option>
@@ -1313,36 +1354,150 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                 ))}
               </div>
             </div>
+
+            {/* ★No.7 タググループ設定 */}
+            <div className="border-t border-slate-100 pt-6 mt-6">
+              <h5 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><FolderHeart className="w-4 h-4" /> タググループ（ムード検索用）</h5>
+              <p className="text-xs text-slate-400 mb-4">公開ページの「ムード検索」で表示されるグループを作れます。</p>
+              
+              <div className="flex gap-2 mb-4">
+                <input type="text" placeholder="グループ名 (例: 雰囲気)" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} className="flex-1 p-2 rounded-lg border border-slate-200 text-sm" />
+                <button onClick={addTagGroup} disabled={!newGroupName} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-xs">作成</button>
+              </div>
+
+              <div className="space-y-4">
+                {editingTagGroups.map((group, idx) => (
+                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-bold text-sm text-blue-800">{group.name}</span>
+                      <button onClick={() => removeTagGroup(idx)} className="text-xs text-red-400 hover:text-red-600">削除</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {/* ★修正: safeCustomTags を使用 */}
+                      {safeCustomTags.map((tag: string) => (
+                        <button 
+                          key={tag} 
+                          onClick={() => toggleTagInGroup(idx, tag)}
+                          // ★修正: group.tags が undefined の場合のガード処理 (|| []) を追加
+                          className={`text-[10px] px-2 py-1 rounded border transition ${(group.tags || []).includes(tag) ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-500 border-slate-200"}`}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* 5. 機能・動作設定 */}
         {activeConfigTab === 'system' && (
           <div className="space-y-6 animate-in fade-in">
             <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6">
               <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Sliders className="w-5 h-5" /> 機能・動作設定</h4>
+              
               <div className="divide-y divide-slate-100">
                 <ToggleSwitch checked={profile.isRequestEnabled ?? true} onChange={v => setProfile({...profile, isRequestEnabled: v})} label="リクエスト受付" description="OFFにすると、公開ページからのリクエストを停止します。" />
                 <ToggleSwitch checked={profile.soundEnabled || false} onChange={v => setProfile({...profile, soundEnabled: v})} label="通知音" description="新しいリクエストが届いた時に音を鳴らします。" />
-                {/* ★説明文の更新: 承認済みの挙動 */}
                 <ToggleSwitch checked={profile.isAcceptedKept || false} onChange={v => setProfile({...profile, isAcceptedKept: v})} label="承認済みを表示に残す" description="ON推奨: 承認しても「対応中」としてリストに残します。完了すると消えます。" />
                 <ToggleSwitch checked={profile.isAutoCategoryEnabled ?? true} onChange={v => setProfile({...profile, isAutoCategoryEnabled: v})} label="インポート時の自動分類" description="曲追加時にアーティスト名からカテゴリを推測します。" />
               </div>
-            </div>
 
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6">
-              <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Smartphone className="w-5 h-5" /> 表示・テーマ設定</h4>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center"><label className="text-sm font-bold text-slate-700">曲リストの並び順（デフォルト）</label><select value={profile.defaultSortType || "newest"} onChange={e => setProfile({...profile, defaultSortType: e.target.value})} className="text-sm border rounded-lg p-2 bg-slate-50"><option value="newest">新着順</option><option value="popular">人気順（歌唱数）</option><option value="title">曲名順</option><option value="artist">アーティスト順</option></select></div>
+              {/* ★No.2 NGワード設定 */}
+              <div className="border-t border-slate-100 pt-4">
+                <label className="text-xs font-bold text-slate-500 uppercase block mb-2 flex items-center gap-2"><Ban className="w-3 h-3" /> リクエストNGワード</label>
+                <div className="flex gap-2 mb-2">
+                  <input type="text" placeholder="禁止用語を追加..." value={newNgWord} onChange={e => setNewNgWord(e.target.value)} className="flex-1 p-2 rounded-lg border border-slate-200 text-sm" />
+                  <button onClick={addNgWord} className="bg-red-50 text-red-500 px-4 py-2 rounded-lg font-bold text-xs border border-red-100 hover:bg-red-100">追加</button>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {profile.ngKeywords?.map((word: string) => (
+                    <span key={word} className="bg-slate-100 text-slate-500 px-2 py-1 rounded text-xs flex items-center gap-1">
+                      {word} <button onClick={() => removeNgWord(word)}><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
               </div>
+            </div>
+            
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6">
+              <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Monitor className="w-5 h-5" /> 外観テーマ</h4>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase block mb-2">世界観テーマ (Theme)</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {/* ★No.21 季節限定テーマ追加 */}
+                  {[
+                    { id: 'default', label: '標準 (Modern)', color: 'bg-white border-slate-200' },
+                    { id: 'neon', label: 'ネオン (Cyber)', color: 'bg-slate-900 border-blue-500 text-blue-400' },
+                    { id: 'retro', label: 'レトロ (Pixel)', color: 'bg-yellow-100 border-orange-400 text-orange-800' },
+                    { id: 'japanese', label: '和風 (Japan)', color: 'bg-red-50 border-red-200 text-red-800' },
+                    { id: 'glitch', label: 'グリッチ (Glitch)', color: 'bg-black border-green-500 text-green-400' },
+                    { id: 'sakura', label: '春・桜 (Sakura)', color: 'bg-pink-50 border-pink-300 text-pink-600' },
+                    { id: 'summer', label: '夏・海 (Summer)', color: 'bg-cyan-50 border-cyan-300 text-cyan-600' },
+                    { id: 'halloween', label: 'ハロウィン', color: 'bg-purple-900 border-orange-500 text-orange-400' },
+                    { id: 'winter', label: '冬・雪 (Winter)', color: 'bg-slate-100 border-slate-300 text-slate-600' },
+                  ].map(theme => (
+                    <button
+                      key={theme.id}
+                      onClick={() => setProfile({...profile, themeStyle: theme.id})}
+                      className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${profile.themeStyle === theme.id ? "ring-2 ring-blue-500 ring-offset-2 scale-105" : "opacity-70 hover:opacity-100"} ${theme.color}`}
+                    >
+                      {theme.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase">背景画像の不透明度</label>
+                    <span className="text-xs font-bold text-slate-700">{Math.round((profile.backgroundOpacity ?? 0.5) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="1" step="0.05" 
+                    value={profile.backgroundOpacity ?? 0.5} 
+                    onChange={e => setProfile({...profile, backgroundOpacity: parseFloat(e.target.value)})}
+                    className="w-full accent-blue-600"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">数値を上げると背景画像がはっきり見えます。</p>
+                </div>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase">背景フィルターの濃さ</label>
+                    <span className="text-xs font-bold text-slate-700">{Math.round((profile.overlayOpacity ?? 0.3) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="1" step="0.05" 
+                    value={profile.overlayOpacity ?? 0.3} 
+                    onChange={e => setProfile({...profile, overlayOpacity: parseFloat(e.target.value)})}
+                    className="w-full accent-slate-600"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">文字を見やすくするための黒（または白）フィルターの濃さです。</p>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-2">フォント設定</label>
+                  <select 
+                    value={profile.fontFamily || "sans"} 
+                    onChange={e => setProfile({...profile, fontFamily: e.target.value})}
+                    className="w-full p-2 border rounded-lg bg-slate-50 text-sm"
+                  >
+                    <option value="sans">ゴシック (標準)</option>
+                    <option value="serif">明朝体 (Serif)</option>
+                    <option value="rounded">丸ゴシック (Rounded)</option>
+                    <option value="handwritten">手書き風 (Handwritten)</option>
+                  </select>
+                </div>
             </div>
           </div>
         )}
-
-        {/* 6. データ管理 */}
+        
+        {/* 6. データ管理 (変更なし) */}
         {activeConfigTab === 'data' && (
           <div className="space-y-6 animate-in fade-in">
-            {/* ... existing code ... */}
             <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-6">
               <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><ShieldAlert className="w-5 h-5" /> データバックアップ・連携</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1361,11 +1516,17 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                 <button onClick={addDemoData} className="text-xs text-slate-400 hover:underline hover:text-blue-500">デモデータ（サンプル曲）を追加する</button>
               </div>
             </div>
-
             {profile.ngUsers && Object.keys(profile.ngUsers).length > 0 && (
               <div className="bg-red-50 p-6 rounded-3xl border border-red-100">
                 <label className="block text-sm font-bold text-red-800 mb-2 flex items-center gap-2"><Ban className="w-4 h-4" /> NGユーザー一覧</label>
-                <ul className="space-y-2">{Object.entries(profile.ngUsers).map(([uid, info]: any) => (<li key={uid} className="flex justify-between items-center text-xs bg-white p-3 rounded-xl border border-red-100"><span>{info.name}</span><button onClick={() => handleUnblock(uid)} className="text-red-500 hover:underline bg-red-50 px-3 py-1 rounded-lg font-bold">解除</button></li>))}</ul>
+                <ul className="space-y-2">
+                  {Object.entries(profile.ngUsers || {}).map(([uid, info]: any) => (
+                    <li key={uid} className="flex justify-between items-center text-xs bg-white p-3 rounded-xl border border-red-100">
+                      <span>{info.name}</span>
+                      <button onClick={() => handleUnblock(uid)} className="text-red-500 hover:underline bg-red-50 px-3 py-1 rounded-lg font-bold">解除</button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -1375,17 +1536,61 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
   );
 };
 
-/* --- ★セトリ管理モーダル (変更なし) --- */
+/* --- ★No.4 Current Setlist Modal (拡張: プリセット機能) --- */
 const CurrentSetlistModal = ({ isOpen, onClose, songs, userId, showToast }: any) => {
+  const [presets, setPresets] = useState<SetlistPreset[]>([]);
+  const [presetName, setPresetName] = useState("");
+  const [mode, setMode] = useState<'current' | 'presets'>('current');
+
+  useEffect(() => {
+    if(isOpen) {
+      onValue(ref(db, `users/${userId}/settings/setlistPresets`), (snap) => {
+        setPresets(snap.val() ? Object.values(snap.val()) : []);
+      });
+    }
+  }, [isOpen, userId]);
+
   if (!isOpen) return null;
   const setlistSongs = songs.filter((s: SongData) => s.isSetlist).sort((a: any, b: any) => (a.setlistOrder || 0) - (b.setlistOrder || 0));
 
-  const copyText = () => {
+  const savePreset = async () => {
+    if(!presetName || setlistSongs.length === 0) return;
+    const newPreset = { id: Date.now().toString(), name: presetName, songIds: setlistSongs.map((s:SongData) => s.id) };
+    await push(ref(db, `users/${userId}/settings/setlistPresets`), newPreset);
+    setPresetName("");
+    showToast("プリセットを保存しました");
+  };
+
+  const loadPreset = async (preset: SetlistPreset) => {
+    if(!confirm(`プリセット「${preset.name}」を読み込みますか？\n(現在のセトリは上書きされます)`)) return;
+    const updates: any = {};
+    // まず全クリア
+    songs.forEach((s: SongData) => { if(s.isSetlist) updates[`users/${userId}/songs/${s.id}/isSetlist`] = false; });
+    // プリセット適用
+    preset.songIds.forEach((id, idx) => {
+      updates[`users/${userId}/songs/${id}/isSetlist`] = true;
+      updates[`users/${userId}/songs/${id}/setlistOrder`] = Date.now() + idx;
+    });
+    await update(ref(db), updates);
+    showToast("読み込みました");
+    setMode('current');
+  };
+
+  const deletePreset = async (id: string) => {
+    if(!confirm("削除しますか？")) return;
+    // Realtime Databaseの検索削除は面倒なので、本来はKeyで管理すべきだが今回はフィルタで対応
+    // ※ 簡略化のため、実際の実装ではIDをキーにして保存することを推奨
+    // ここでは再取得して上書きする簡易実装
+    const newPresets = presets.filter(p => p.id !== id);
+    await set(ref(db, `users/${userId}/settings/setlistPresets`), newPresets);
+  };
+
+  // ... (copyText, saveLog, clearAll は既存維持) ...
+  const copyText = () => { 
     const text = setlistSongs.map((s: SongData) => `・${s.title} / ${s.artist}`).join("\n");
     navigator.clipboard.writeText(text);
     showToast("テキストをコピーしました");
   };
-
   const saveLog = async () => {
     if (!confirm("履歴に保存し、曲のデータを更新しますか？")) return;
     const historyData = { date: Date.now(), songs: setlistSongs.map((s: SongData) => ({ title: s.title, artist: s.artist, id: s.id })) };
@@ -1400,7 +1605,6 @@ const CurrentSetlistModal = ({ isOpen, onClose, songs, userId, showToast }: any)
     showToast("保存してクリアしました");
     onClose();
   };
-
   const clearAll = async () => {
     if (!confirm("セトリを空にしますか？")) return;
     const updates: any = {};
@@ -1413,38 +1617,160 @@ const CurrentSetlistModal = ({ isOpen, onClose, songs, userId, showToast }: any)
     <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl relative animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
-        <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><ListChecks className="w-6 h-6 text-blue-600" /> 本日のセトリ ({setlistSongs.length})</h3>
+        <div className="flex items-center gap-4 mb-4">
+          <button onClick={() => setMode('current')} className={`text-lg font-bold ${mode === 'current' ? 'text-slate-800 border-b-2 border-blue-500' : 'text-slate-400'}`}>現在のセトリ</button>
+          <button onClick={() => setMode('presets')} className={`text-lg font-bold ${mode === 'presets' ? 'text-slate-800 border-b-2 border-blue-500' : 'text-slate-400'}`}>プリセット</button>
+        </div>
         
-        <div className="bg-slate-50 rounded-xl p-4 max-h-[50vh] overflow-y-auto mb-6 border border-slate-100">
-          {setlistSongs.length === 0 ? <p className="text-slate-400 text-center text-sm">曲がありません</p> : (
-            <ul className="space-y-2">
-              {setlistSongs.map((s: SongData, i: number) => (
-                <li key={s.id} className="flex gap-2 text-sm text-slate-700 border-b border-slate-200 pb-2 last:border-none">
-                  <span className="font-bold text-blue-400 w-5">{i+1}.</span>
-                  <span className="font-bold">{s.title}</span>
-                  <span className="text-slate-400 text-xs self-center">- {s.artist}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={copyText} className="col-span-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition flex items-center justify-center gap-2"><Copy className="w-4 h-4" /> テキストコピー</button>
-          <button onClick={saveLog} className="py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2"><Save className="w-4 h-4" /> 保存して終了</button>
-          <button onClick={clearAll} className="py-3 bg-red-50 text-red-500 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> クリア</button>
-        </div>
+        {mode === 'current' ? (
+          <>
+            <div className="bg-slate-50 rounded-xl p-4 max-h-[40vh] overflow-y-auto mb-4 border border-slate-100">
+              {setlistSongs.length === 0 ? <p className="text-slate-400 text-center text-sm">曲がありません</p> : (
+                <ul className="space-y-2">
+                  {setlistSongs.map((s: SongData, i: number) => (
+                    <li key={s.id} className="flex gap-2 text-sm text-slate-700 border-b border-slate-200 pb-2 last:border-none">
+                      <span className="font-bold text-blue-400 w-5">{i+1}.</span><span className="font-bold">{s.title}</span><span className="text-slate-400 text-xs self-center">- {s.artist}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="flex gap-2 mb-4">
+              <input type="text" placeholder="今のリストをプリセット保存..." value={presetName} onChange={e => setPresetName(e.target.value)} className="flex-1 text-xs p-2 border rounded-lg" />
+              <button onClick={savePreset} disabled={!presetName || setlistSongs.length===0} className="bg-slate-800 text-white text-xs px-3 rounded-lg font-bold">保存</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={copyText} className="col-span-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition flex items-center justify-center gap-2"><Copy className="w-4 h-4" /> テキストコピー</button>
+              <button onClick={saveLog} className="py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2"><Save className="w-4 h-4" /> 保存して終了</button>
+              <button onClick={clearAll} className="py-3 bg-red-50 text-red-500 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> クリア</button>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {presets.length === 0 ? <p className="text-center text-slate-400 text-sm py-8">プリセットがありません</p> : presets.map(p => (
+              <div key={p.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                <div>
+                  <div className="font-bold text-slate-700 text-sm">{p.name}</div>
+                  <div className="text-xs text-slate-400">{p.songIds.length}曲</div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => loadPreset(p)} className="bg-blue-100 text-blue-600 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-200">読込</button>
+                  <button onClick={() => deletePreset(p.id)} className="text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-/* --- Dashboard Main --- */
+/* --- Song Modal (拡張: 練習進捗・重複チェック・自分用メモ) --- */
+const SongModal = ({ isOpen, onClose, initialData, userId, customTags = [], categories = [], songs }: any) => { // songsを受け取るように変更
+  const [title, setTitle] = useState(initialData?.title || "");
+  const [reading, setReading] = useState(initialData?.reading || ""); 
+  const [artist, setArtist] = useState(initialData?.artist || "");
+  const [category, setCategory] = useState(initialData?.category || categories[0] || "J-POP"); 
+  const [key, setKey] = useState(initialData?.key || "");
+  const [bpm, setBpm] = useState(initialData?.bpm || ""); 
+  const [noteRange, setNoteRange] = useState(initialData?.noteRange || ""); 
+  const [rating, setRating] = useState(initialData?.rating || 0); 
+  const [memo, setMemo] = useState(initialData?.memo || "");
+  const [lyricsUrl, setLyricsUrl] = useState(initialData?.lyricsUrl || ""); 
+  const [tagsInput, setTagsInput] = useState<string>(initialData?.tags ? initialData.tags.join(" ") : "");
+  
+  // ★No.1, 5
+  const [practiceRate, setPracticeRate] = useState(initialData?.practiceRate || 0);
+  const [privateMemo, setPrivateMemo] = useState(initialData?.privateMemo || "");
+  // ★No.8 重複警告
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+
+  // ★No.8 重複チェックロジック
+  useEffect(() => {
+    if (!title || initialData) return; // 編集時はチェックしない
+    const normTitle = normalize(title);
+    const dup = songs?.find((s: SongData) => normalize(s.title) === normTitle);
+    if (dup) setDuplicateWarning(`「${dup.title}」は既に登録されています`);
+    else setDuplicateWarning(null);
+  }, [title, songs, initialData]);
+
+  const handleSubmit = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    const tags = tagsInput.replace(/　/g, " ").split(" ").filter((t: string) => t.trim() !== ""); 
+    const payload = { 
+      title, reading, artist, category, tags, key, memo, lyricsUrl, bpm, noteRange, 
+      rating: Number(rating), 
+      practiceRate: Number(practiceRate), // 追加
+      privateMemo // 追加
+    }; 
+    if (initialData?.id) { await update(ref(db, `users/${userId}/songs/${initialData.id}`), payload); } 
+    else { await push(ref(db, `users/${userId}/songs`), { ...payload, likes: 0, sungCount: 0, createdAt: Date.now() }); } 
+    onClose(); 
+  };
+
+  const addTag = (tag: string) => { if (!tagsInput.includes(tag)) { setTagsInput((prev: string) => (prev + " " + tag).trim()); } };
+  
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl relative animate-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Music className="w-6 h-6 text-blue-600" /> {initialData ? "曲を編集" : "新しい曲を追加"}</h2>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">曲名 <span className="text-red-500">*</span></label>
+              <input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-900 bg-white" placeholder="例: マリーゴールド" />
+              {duplicateWarning && <p className="text-xs text-red-500 font-bold mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {duplicateWarning}</p>}
+            </div>
+            {/* ... (artist, reading, category, key は既存維持) ... */}
+            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><Type className="w-3 h-3" /> ふりがな</label><input type="text" value={reading} onChange={e => setReading(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-900 bg-white" placeholder="例: まりーごーるど" /></div>
+            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">アーティスト <span className="text-red-500">*</span></label><input type="text" required value={artist} onChange={e => setArtist(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="例: あいみょん" /></div>
+            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">カテゴリー</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">キー (Key)</label><input type="text" value={key} onChange={e => setKey(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="例: +2, 原キー" /></div>
+            
+            {/* ★No.1 練習進捗 */}
+            <div className="col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex justify-between">
+                <span>練習・習熟度</span>
+                <span>{practiceRate}%</span>
+              </label>
+              <input type="range" min="0" max="100" step="10" value={practiceRate} onChange={e => setPracticeRate(Number(e.target.value))} className="w-full accent-green-500" />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>未着手</span><span>暗記中</span><span>歌える</span><span>十八番</span></div>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs font-bold text-slate-500">自己評価:</span>
+                <div className="flex"><StarRating rating={rating} /></div>
+                <input type="range" min="0" max="5" value={rating} onChange={e => setRating(Number(e.target.value))} className="w-20 accent-yellow-400 ml-auto" />
+              </div>
+            </div>
+
+            {/* ... (BPM, Range, LyricsUrl は既存維持) ... */}
+            <div className="col-span-2 flex gap-4"><div className="w-20"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">BPM</label><input type="text" value={bpm} onChange={e => setBpm(e.target.value)} className="w-full p-2 border rounded text-center" placeholder="120" /></div><div className="w-24"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">音域</label><input type="text" value={noteRange} onChange={e => setNoteRange(e.target.value)} className="w-full p-2 border rounded text-center" placeholder="mid1C~hiC" /></div><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3" /> 歌詞URL</label><input type="text" value={lyricsUrl} onChange={e => setLyricsUrl(e.target.value)} className="w-full p-2 border rounded text-sm" placeholder="https://..." /></div></div>
+
+            {/* メモ */}
+            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">公開メモ (リスナーに見えます)</label><textarea value={memo} onChange={e => setMemo(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none h-16 resize-none text-sm text-slate-900 bg-white" placeholder="例: Aメロは優しく..." /></div>
+            
+            {/* ★No.5 自分用メモ */}
+            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><Lock className="w-3 h-3" /> 自分用メモ (非公開)</label><textarea value={privateMemo} onChange={e => setPrivateMemo(e.target.value)} className="w-full p-3 rounded-lg border border-yellow-200 bg-yellow-50 focus:ring-2 focus:ring-yellow-400 outline-none h-16 resize-none text-sm text-slate-800" placeholder="例: 裏声注意、Cメロブレス位置..." /></div>
+
+            {/* タグ */}
+            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">タグ</label><div className="relative mb-2"><Hash className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" /><input type="text" value={tagsInput} onChange={e => setTagsInput(e.target.value)} className="w-full p-3 pl-9 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="初見歓迎 練習中" /></div>{customTags && customTags.length > 0 && (<div className="flex flex-wrap gap-1">{customTags.map((tag: string) => (<button key={tag} type="button" onClick={() => addTag(tag)} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition border border-slate-200">+ {tag}</button>))}</div>)}</div>
+          </div>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-900/20 mt-2">保存する</button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+/* --- Dashboard Main (propsにsongsを追加してSongModalへ渡す) --- */
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
+  // ... (省略なし)
   const router = useRouter(); 
   const [activeTab, setActiveTab] = useState<'home' | 'songs' | 'requests' | 'history' | 'settings'>('home'); 
   const [songs, setSongs] = useState<SongData[]>([]);
+  // ... (State定義は既存通り)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSong, setEditingSong] = useState<SongData | undefined>(undefined);
   const [customTags, setCustomTags] = useState<string[]>([]);
@@ -1469,7 +1795,7 @@ export default function Dashboard() {
       const likes = loadedSongs.reduce((acc, song) => acc + (song.likes || 0), 0);
       setStats(prev => ({ ...prev, totalSongs: loadedSongs.length, totalLikes: likes }));
     });
-    // ... (Requests, Profile, Cats, Tags fetching same as before)
+    // ... (requests, profile, categories, tags のリスナーも既存通り)
     const reqRef = ref(db, `users/${user.uid}/requests`);
     const unsubReq = onValue(reqRef, (snapshot) => {
       const data = snapshot.val();
@@ -1497,7 +1823,6 @@ export default function Dashboard() {
   }, [user]);
 
   const openModal = (song?: SongData) => { setEditingSong(song); setIsModalOpen(true); };
-  
   const currentSetlistCount = songs.filter(s => s.isSetlist).length;
 
   if (loading || !user) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-blue-500" /></div>;
@@ -1507,7 +1832,6 @@ export default function Dashboard() {
       <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-white to-pink-50 z-0 pointer-events-none opacity-60"></div>
       
       <div className="hidden md:flex flex-col w-64 fixed top-0 bottom-0 left-0 bg-white border-r border-slate-100 p-6 z-30 shadow-sm">
-        {/* ... Sidebar ... */}
         <div className="flex items-center gap-2 mb-8"><div className="bg-blue-600 p-2 rounded-xl"><Music className="w-6 h-6 text-white" /></div><h1 className="text-xl font-black text-slate-800 tracking-tight">SongList</h1></div>
         <nav className="flex-1 space-y-2">
           <SidebarButton active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={HomeIcon} label="ホーム" />
@@ -1528,11 +1852,7 @@ export default function Dashboard() {
           <div className="flex gap-3"><Link href={`/user/${user.uid}`} target="_blank" className="p-2 rounded-full bg-slate-100 text-blue-600"><ExternalLink className="w-5 h-5" /></Link><div className="w-9 h-9 rounded-full bg-slate-200 overflow-hidden"><img src={user.photoURL || ""} alt="User" /></div></div>
         </div>
 
-        <div className="hidden md:flex justify-between items-center mb-8">
-          <div><h2 className="text-2xl font-black text-slate-800 mb-1">ダッシュボード</h2><p className="text-slate-500 text-sm">ようこそ、{user.displayName}さん</p></div>
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden"><img src={user.photoURL || ""} alt="User" /></div></div>
-        </div>
-
+        {/* ... (StatCards, HomeMenu等は既存通り) ... */}
         {activeTab !== 'home' && (
           <div className="grid grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-10">
             <StatCard icon={ListMusic} label="曲数" value={stats.totalSongs} color="bg-blue-500" />
@@ -1552,7 +1872,6 @@ export default function Dashboard() {
             />
           )}
           
-          {/* ★修正: 設定値を各コンポーネントに渡す */}
           {activeTab === 'songs' && <SongManager userId={user.uid} songs={songs} onEdit={openModal} customTags={customTags} tagColors={profile?.tagColors} categories={categories} showToast={showToast} onOpenImport={() => setIsImportModalOpen(true)} defaultSortType={profile?.defaultSortType} />}
           {activeTab === 'requests' && <RequestManager userId={user.uid} ngUsers={profile?.ngUsers} requests={requests} soundEnabled={profile?.soundEnabled} showToast={showToast} isAcceptedKept={profile?.isAcceptedKept} />}
           {activeTab === 'history' && <HistoryManager userId={user.uid} songs={songs} requests={requests} showToast={showToast} />}
@@ -1582,51 +1901,11 @@ export default function Dashboard() {
         )}
       </div>
 
-      {isModalOpen && <SongModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} initialData={editingSong} userId={user.uid} customTags={customTags} categories={categories} />}
+      {/* ★SongModalにsongsを渡す (重複チェック用) */}
+      {isModalOpen && <SongModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} initialData={editingSong} userId={user.uid} customTags={customTags} categories={categories} songs={songs} />}
       {isSetlistOpen && <CurrentSetlistModal isOpen={isSetlistOpen} onClose={() => setIsSetlistOpen(false)} songs={songs} userId={user.uid} showToast={showToast} />}
-      {/* ★修正: isAutoCategoryEnabledを渡す */}
       <SmartImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} userId={user.uid} categories={categories} songs={songs} showToast={showToast} isAutoCategoryEnabled={profile?.isAutoCategoryEnabled} />
       {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
     </div>
   );
 }
-
-// --- Song Modal (変更なし) ---
-const SongModal = ({ isOpen, onClose, initialData, userId, customTags = [], categories = [] }: any) => {
-  const [title, setTitle] = useState(initialData?.title || "");
-  const [reading, setReading] = useState(initialData?.reading || ""); 
-  const [artist, setArtist] = useState(initialData?.artist || "");
-  const [category, setCategory] = useState(initialData?.category || categories[0] || "J-POP"); 
-  const [key, setKey] = useState(initialData?.key || "");
-  const [bpm, setBpm] = useState(initialData?.bpm || ""); 
-  const [noteRange, setNoteRange] = useState(initialData?.noteRange || ""); 
-  const [rating, setRating] = useState(initialData?.rating || 0); 
-  const [memo, setMemo] = useState(initialData?.memo || "");
-  const [lyricsUrl, setLyricsUrl] = useState(initialData?.lyricsUrl || ""); 
-  const [tagsInput, setTagsInput] = useState<string>(initialData?.tags ? initialData.tags.join(" ") : "");
-  const handleSubmit = async (e: React.FormEvent) => { e.preventDefault(); const tags = tagsInput.replace(/　/g, " ").split(" ").filter((t: string) => t.trim() !== ""); const payload = { title, reading, artist, category, tags, key, memo, lyricsUrl, bpm, noteRange, rating: Number(rating) }; if (initialData?.id) { await update(ref(db, `users/${userId}/songs/${initialData.id}`), payload); } else { await push(ref(db, `users/${userId}/songs`), { ...payload, likes: 0, sungCount: 0, createdAt: Date.now() }); } onClose(); };
-
-  const addTag = (tag: string) => { if (!tagsInput.includes(tag)) { setTagsInput((prev: string) => (prev + " " + tag).trim()); } };
-  return (
-    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl relative animate-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
-        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Music className="w-6 h-6 text-blue-600" /> {initialData ? "曲を編集" : "新しい曲を追加"}</h2>
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">曲名 <span className="text-red-500">*</span></label><input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-900 bg-white" placeholder="例: マリーゴールド" /></div>
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><Type className="w-3 h-3" /> ふりがな</label><input type="text" value={reading} onChange={e => setReading(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-900 bg-white" placeholder="例: まりーごーるど" /></div>
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">アーティスト <span className="text-red-500">*</span></label><input type="text" required value={artist} onChange={e => setArtist(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="例: あいみょん" /></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">カテゴリー</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900">{categories.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">キー (Key)</label><input type="text" value={key} onChange={e => setKey(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="例: +2, 原キー" /></div>
-            <div className="col-span-2 flex gap-4"><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">習熟度</label><input type="range" min="0" max="5" value={rating} onChange={e => setRating(Number(e.target.value))} className="w-full accent-yellow-400" /><div className="flex justify-center mt-1"><StarRating rating={rating} /></div></div><div className="w-20"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">BPM</label><input type="text" value={bpm} onChange={e => setBpm(e.target.value)} className="w-full p-2 border rounded text-center" placeholder="120" /></div><div className="w-24"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">音域</label><input type="text" value={noteRange} onChange={e => setNoteRange(e.target.value)} className="w-full p-2 border rounded text-center" placeholder="mid1C~hiC" /></div></div>
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3" /> 歌詞URL</label><input type="text" value={lyricsUrl} onChange={e => setLyricsUrl(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-900 bg-white" placeholder="https://..." /></div>
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">歌い方メモ</label><textarea value={memo} onChange={e => setMemo(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none h-20 resize-none text-sm text-slate-900 bg-white" placeholder="例: Aメロは優しく..." /></div>
-            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">タグ</label><div className="relative mb-2"><Hash className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" /><input type="text" value={tagsInput} onChange={e => setTagsInput(e.target.value)} className="w-full p-3 pl-9 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" placeholder="初見歓迎 練習中" /></div>{customTags && customTags.length > 0 && (<div className="flex flex-wrap gap-1">{customTags.map((tag: string) => (<button key={tag} type="button" onClick={() => addTag(tag)} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition border border-slate-200">+ {tag}</button>))}</div>)}</div>
-          </div>
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-900/20 mt-2">保存する</button>
-        </form>
-      </div>
-    </div>
-  );
-};
