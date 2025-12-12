@@ -758,12 +758,21 @@ const SongManager = ({ userId, songs, onEdit, customTags, tagColors = {}, catego
                       {expandedId === song.id && !isSelectionMode && (
                         <div className="px-3 pb-3 pt-0 animate-in slide-in-from-top-1">
                           <div className="border-t border-slate-100 pt-3 flex flex-col gap-3">
-                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                            {/* ▼▼▼ ボタン群のエリアを修正 ▼▼▼ */}
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
                               <button onClick={(e) => { e.stopPropagation(); openSearch(song.title, song.artist, 'lyrics'); }} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600"><Search className="w-3 h-3" /> 歌詞検索</button>
                               <button onClick={(e) => { e.stopPropagation(); openSearch(song.title, song.artist, 'video'); }} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 hover:bg-red-50 hover:text-red-600"><Youtube className="w-3 h-3" /> 動画検索</button>
                               <button onClick={(e) => { e.stopPropagation(); togglePin(song); }} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition ${song.isPinned ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-600"}`}><Pin className="w-3 h-3" /> ピン留め</button>
-                              <button onClick={(e) => onEdit(song)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200 ml-auto"><Edit className="w-3 h-3" /> 編集</button>
+                              
+                              {/* 右寄せグループ */}
+                              <div className="ml-auto flex gap-2">
+                                <button onClick={(e) => onEdit(song)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200"><Edit className="w-3 h-3" /> 編集</button>
+                                {/* ★追加: 削除ボタン */}
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(song.id); }} className="flex items-center gap-1 px-3 py-1.5 bg-red-50 rounded-lg text-xs font-bold text-red-500 hover:bg-red-100"><Trash2 className="w-3 h-3" /> 削除</button>
+                              </div>
                             </div>
+                            {/* ▲▲▲ ここまで ▲▲▲ */}
+
                             {(song.memo || song.lyricsUrl || song.reading || song.bpm || song.noteRange || song.rating) && (
                               <div className="bg-slate-50 p-2 rounded-lg text-xs text-slate-600 space-y-1">
                                 {song.rating && song.rating > 0 && <div className="flex items-center gap-1">習熟度: <StarRating rating={song.rating} /></div>}
@@ -1017,7 +1026,6 @@ const HistoryManager = ({ userId, songs, requests, showToast }: any) => {
 };
 
 /* --- Profile Editor (拡張版・修正済み) --- */
-/* --- Profile Editor (拡張版・修正済み) --- */
 const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, onCategoriesUpdate, profile, setProfile, showToast }: any) => { 
   const [loading, setLoading] = useState(false);
   const [activeConfigTab, setActiveConfigTab] = useState<'profile' | 'links' | 'categories' | 'tags' | 'system' | 'data'>('profile'); 
@@ -1150,6 +1158,53 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
   };
   const removeTagGroup = (index: number) => {
     setEditingTagGroups(editingTagGroups.filter((_, i) => i !== index));
+  };
+  // ★追加: ふりがな自動補完ロジック
+  const autoFillReadings = async () => {
+    if (!confirm("ふりがなが未設定の曲に対し、自動入力を試みますか？\n\n【対象】\n・カタカナのみのタイトル → ひらがなに変換\n・ひらがなのみのタイトル → そのまま設定\n\n※ 漢字や英数字を含むタイトルは、正確な読みが判別できないためスキップされます。")) return;
+    
+    setLoading(true);
+    let count = 0;
+    const updates: any = {};
+
+    songs.forEach((song: SongData) => {
+      // ふりがなが空、かつタイトルがある場合
+      if (!song.reading && song.title) {
+        let newReading = "";
+        const title = song.title.trim();
+
+        // 全角カタカナのみの場合 → ひらがなに変換
+        if (/^[\u30A0-\u30FFー]+$/.test(title)) {
+          newReading = title.replace(/[\u30a1-\u30f6]/g, function(match) {
+            var chr = match.charCodeAt(0) - 0x60;
+            return String.fromCharCode(chr);
+          });
+        }
+        // ひらがなのみの場合 → そのまま
+        else if (/^[\u3040-\u309Fー]+$/.test(title)) {
+          newReading = title;
+        }
+
+        if (newReading) {
+          updates[`users/${userId}/songs/${song.id}/reading`] = newReading;
+          count++;
+        }
+      }
+    });
+
+    try {
+      if (count > 0) {
+        await update(ref(db), updates);
+        showToast(`${count}曲のふりがなを自動登録しました！`);
+      } else {
+        alert("自動補完できる曲が見つかりませんでした。\n（既に設定済みか、漢字・英数字を含む曲のみです）");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("更新中にエラーが発生しました");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -1512,6 +1567,21 @@ const ProfileEditor = ({ userId, customTags, onTagsUpdate, songs, categories, on
                   <span className="text-xs text-slate-400">配信画面用のURLを取得します</span>
                 </button>
               </div>
+
+              {/* ★追加: 拡張機能セクション */}
+              <div className="bg-white/80 backdrop-blur-md rounded-3xl shadow-sm border border-white/50 p-6 space-y-4">
+                <h4 className="font-bold text-slate-600 flex items-center gap-2 border-b border-slate-100 pb-3"><Sparkles className="w-5 h-5 text-yellow-500" /> データ自動補完 (Beta)</h4>
+                <div className="flex items-center justify-between p-4 bg-yellow-50 border border-yellow-100 rounded-2xl">
+                  <div>
+                    <h5 className="font-bold text-yellow-800 text-sm">ふりがな一括入力</h5>
+                    <p className="text-xs text-yellow-700 mt-1">未設定の曲（カタカナ・ひらがなのみ）にふりがなを自動で振ります。</p>
+                  </div>
+                  <button onClick={autoFillReadings} disabled={loading} className="bg-yellow-500 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-yellow-600 transition shadow-md whitespace-nowrap">
+                    実行する
+                  </button>
+                </div>
+              </div>
+
               <div className="text-center pt-4 border-t border-slate-100">
                 <button onClick={addDemoData} className="text-xs text-slate-400 hover:underline hover:text-blue-500">デモデータ（サンプル曲）を追加する</button>
               </div>

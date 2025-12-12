@@ -49,6 +49,7 @@ type Profile = {
   twitch?: string;
   tiktok?: string;
   otherUrl?: string;
+  customLinks?: { label: string; url: string; id: string }[]; // ★修正: カスタムリンクの型定義を追加
   themeColor?: string;
   fontFamily?: string;
   backgroundImage?: string;
@@ -147,20 +148,6 @@ const Confetti = () => (
     `}} />
   </div>
 );
-
-const FloatingParticles = ({ theme }: { theme: string }) => {
-  const icons = theme === 'sakura' ? ['🌸', '💮', '✨'] : theme === 'summer' ? ['🌊', '🌴', '☀️'] : theme === 'halloween' ? ['🎃', '👻', '🦇'] : theme === 'winter' ? ['❄️', '⛄', '✨'] : ['🎵', '✨', '🎶'];
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-      {[...Array(15)].map((_, i) => (
-        <div key={i} className="absolute animate-float opacity-30 text-xl" style={{ left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`, animationDuration: `${10 + Math.random() * 20}s`, animationDelay: `-${Math.random() * 20}s` }}>
-          {icons[i % icons.length]}
-        </div>
-      ))}
-      <style jsx>{` @keyframes float { 0% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-20px) rotate(10deg); } 100% { transform: translateY(0) rotate(0deg); } } .animate-float { animation: float infinite ease-in-out; } `}</style>
-    </div>
-  );
-};
 
 const RippleEffect = () => {
   const [ripples, setRipples] = useState<{x:number, y:number, id:number}[]>([]);
@@ -465,8 +452,6 @@ export default function PublicUserPage() {
         {profile?.backgroundImage ? (<div className="absolute inset-0 bg-cover bg-center blur-sm scale-110" style={{ backgroundImage: `url(${profile.backgroundImage})` }} />) : (<div className={`absolute inset-0 bg-gradient-to-br ${currentTheme.bg}`} />)}
         <div className={`absolute inset-0 ${isDarkMode ? "bg-black" : "bg-white"}`} style={{ opacity: profile?.overlayOpacity ?? (isDarkMode ? 0.3 : 0.1) }} />
       </div>
-      
-      <FloatingParticles theme={themeStyle} /> 
       <RippleEffect /> 
       <div className="fixed top-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 z-[60] transition-all duration-100 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${scrollPercentage}%` }}></div>
 
@@ -527,6 +512,39 @@ export default function PublicUserPage() {
                 {profile?.tiktok && <a href={`https://tiktok.com/@${profile.tiktok}`} target="_blank" className={`p-3.5 rounded-full transition-all hover:scale-110 active:scale-90 shadow-sm ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-600 hover:bg-slate-50"}`}><Music2 className="w-6 h-6" /></a>}
                 {profile?.otherUrl && <a href={profile.otherUrl} target="_blank" className={`p-3.5 rounded-full transition-all hover:scale-110 active:scale-90 shadow-sm ${isDarkMode ? "bg-slate-800 text-green-400 hover:bg-slate-700" : "bg-white text-green-500 hover:bg-green-50"}`}><LinkIcon className="w-6 h-6" /></a>}
               </div>
+
+              {/* ★★★ 修正: カスタムリンク表示コードの追加 ★★★ */}
+              {profile?.customLinks && profile.customLinks.length > 0 && (
+                <div className="flex flex-wrap gap-2 justify-center mb-10 -mt-6 animate-in fade-in slide-in-from-bottom-2">
+                  {profile.customLinks.map((link: any) => (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-sm text-xs font-bold transition-all hover:scale-105 active:scale-95 ${
+                        isDarkMode 
+                          ? "bg-slate-800 border border-slate-700 text-slate-300 hover:border-pink-500/50 hover:text-pink-400" 
+                          : "bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300"
+                      }`}
+                    >
+                      {link.label && link.label.toUpperCase().includes("REALITY") ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isDarkMode ? "text-pink-400" : "text-pink-500"}>
+                          <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+                          <path d="M12 18h.01" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                        </svg>
+                      )}
+                      <span>{link.label}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+              {/* ★★★ 追加ここまで ★★★ */}
 
               <div className="flex flex-col gap-4">
                 <button onClick={() => { setActiveTab('songs'); vibrate(20); }} className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/30`}>

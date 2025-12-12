@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"; // Viewportを追加
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "../context/AuthContext";
+import Footer from "../components/Footer"; // ★修正: 相対パスに変更して読み込みを確実に
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -32,10 +33,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className={inter.className}>
+      {/* ★変更: flex flex-col min-h-screen を追加してフッターを最下部に固定する準備 */}
+      <body className={`${inter.className} flex flex-col min-h-screen`}>
         <AuthProvider>
-          {children}
+          {/* ★変更: メインコンテンツを伸長させ、フッターを押し下げる */}
+          <main className="flex-grow">
+            {children}
+          </main>
         </AuthProvider>
+        {/* ★追加: 共通フッター */}
+        <Footer />
       </body>
     </html>
   );
